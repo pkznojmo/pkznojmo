@@ -674,10 +674,18 @@ export default function AttendanceClient({
 
                       <div className="w-4 flex items-center justify-center">
                         {fieldStatus === 'saving' && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />}
-                        {fieldStatus === 'saved' && <Check className="w-4 h-4 text-emerald-600" title="Uloženo" />}
-                        {fieldStatus === 'error' && <AlertCircle className="w-4 h-4 text-rose-500" title="Chyba" />}
+                        {fieldStatus === 'saved' && (
+                          <span title="Uloženo" className="inline-flex items-center">
+                            <Check className="w-4 h-4 text-emerald-600" />
+                          </span>
+                        )}
+                        {fieldStatus === 'error' && (
+                          <span title="Chyba" className="inline-flex items-center">
+                            <AlertCircle className="w-4 h-4 text-rose-500" />
+                          </span>
+                        )}
                       </div>
-
+                      
                       {isAdmin && (
                         <button
                           type="button"

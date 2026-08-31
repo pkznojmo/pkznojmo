@@ -230,8 +230,8 @@ export default function ZavodDetailPage() {
         }
 
         const statsToUpsert = tempAggregated
-          .filter(swimmer => swimmer.swimmerId && validCspsIds.has(Number(swimmer.swimmerId)))
-          .map(swimmer => {
+          .filter((swimmer: any) => swimmer.swimmerId && validCspsIds.has(Number(swimmer.swimmerId)))
+          .map((swimmer: any) => {
             let starts = 0;
             let orCount = 0;
             let nrCount = 0;

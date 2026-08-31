@@ -12,6 +12,7 @@ type LeaderboardItem = {
   points: number;
   bonus: number;
   totalScore: number;
+  rank: number; // <-- Přidej tento řádek sem
 };
 
 type AnnualLeaderboardItem = {

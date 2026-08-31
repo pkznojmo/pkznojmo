@@ -1,26 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useProfile } from '@/components/ProfileContext';
 import { 
   Trophy, 
   ArrowLeft, 
   Loader2, 
   Activity, 
-  Award, 
   Dumbbell, 
   Waves, 
   Target,
   Lock,
   Calendar,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   MapPin,
-  Clock,
-  Medal,
-  Sparkles
+  Medal
 } from 'lucide-react';
 
 interface SwimmerProfile {
@@ -56,15 +52,11 @@ interface CspsOutput {
   date: string;
 }
 
-export default function PlavecDetailDBPage() {
-  const params = useParams();
+export default function SwimmerStatistikaPage() {
   const router = useRouter();
-  const swimmerId = params?.id as string;
+  const { activeProfile } = useProfile();
 
   const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  const [isCoachOrAdmin, setIsCoachOrAdmin] = useState<boolean>(false);
-  const [teamSwimmers, setTeamSwimmers] = useState<{ id: string; first_name: string; last_name: string }[]>([]);
   const [swimmer, setSwimmer] = useState<SwimmerProfile | null>(null);
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
   const [clubRecords, setClubRecords] = useState<ClubRecord[]>([]);
@@ -80,46 +72,30 @@ export default function PlavecDetailDBPage() {
   const currentMonth = now.getMonth();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear);
 
+  // Načítání dat při změně aktivního profilu v sidebaru[cite: 14, 15]
   useEffect(() => {
-    if (swimmerId) {
-      loadAllData(swimmerId);
-    }
-  }, [swimmerId]);
+    loadMyData();
+  }, [activeProfile]);
 
-  useEffect(() => {
-    if (!isLoggedIn && activeTab === 'treninky') {
-      setActiveTab('prehled');
-    }
-  }, [isLoggedIn, activeTab]);
-
-  const loadAllData = async (id: string) => {
+  const loadMyData = async () => {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const loggedIn = !!session;
-      setIsLoggedIn(loggedIn);
-
-      let userCanSwitch = false;
-      if (session) {
-        const { data: myProfile } = await supabase
-          .from('profiles')
-          .select('roles')
-          .eq('id', session.user.id)
-          .single();
-        
-        if (myProfile && Array.isArray(myProfile.roles)) {
-          const lowerRoles = myProfile.roles.map((r: string) => r.toLowerCase());
-          if (lowerRoles.some(r => ['coach', 'admin', 'trenér', 'trainer'].includes(r))) {
-            userCanSwitch = true;
-          }
-        }
+      
+      if (!session) {
+        router.push('/login');
+        return;
       }
-      setIsCoachOrAdmin(userCanSwitch);
+
+      // Určení ID uživatele/plavce podle aktivního profilu ze sidebaru[cite: 14, 15]
+      const targetId = activeProfile?.type === 'child' && activeProfile.childId 
+        ? activeProfile.childId 
+        : session.user.id;
 
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id, first_name, last_name, birth_year, csps_id, team_id, teams:team_id(name)')
-        .eq('id', id)
+        .eq('id', targetId)
         .single();
 
       if (profileError || !profileData) {
@@ -140,38 +116,32 @@ export default function PlavecDetailDBPage() {
       };
       setSwimmer(swimmerProfile);
 
-      if (profileData.team_id) {
-        const { data: teamMembers } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name')
-          .eq('team_id', profileData.team_id)
-          .order('last_name', { ascending: true });
-        if (teamMembers) {
-          setTeamSwimmers(teamMembers);
-        }
+      // Načtení docházky[cite: 14]
+      const { data: attendanceData } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('swimmer_id', targetId)
+        .order('date', { ascending: false });
+
+      if (attendanceData) {
+        setAttendance(attendanceData);
+      } else {
+        setAttendance([]);
       }
 
-      if (loggedIn) {
-        const { data: attendanceData } = await supabase
-          .from('attendance')
-          .select('*')
-          .eq('swimmer_id', id)
-          .order('date', { ascending: false });
-
-        if (attendanceData) {
-          setAttendance(attendanceData);
-        }
-      }
-
+      // Načtení klubových rekordů[cite: 14]
       const { data: recordsData } = await supabase
         .from('club_records')
         .select('*')
-        .eq('swimmer_id', id);
+        .eq('swimmer_id', targetId);
 
       if (recordsData) {
         setClubRecords(recordsData);
+      } else {
+        setClubRecords([]);
       }
 
+      // Načtení ČSPS dat, pokud má plavec vyplněné csps_id[cite: 14]
       if (profileData.csps_id) {
         try {
           const resOutputs = await fetch(`/api/csps/${profileData.csps_id}?type=outputs`);
@@ -192,6 +162,9 @@ export default function PlavecDetailDBPage() {
         } catch (apiErr) {
           console.error('Chyba při načítání ČSPS dat:', apiErr);
         }
+      } else {
+        setCspsOutputs([]);
+        setCompetitions([]);
       }
 
     } catch (err) {
@@ -205,7 +178,7 @@ export default function PlavecDetailDBPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px] text-slate-400 gap-2 p-4">
         <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-        <span className="text-sm font-medium">Načítám data z databáze a ČSPS...</span>
+        <span className="text-sm font-medium">Načítám statistiky...</span>
       </div>
     );
   }
@@ -213,12 +186,12 @@ export default function PlavecDetailDBPage() {
   if (!swimmer) {
     return (
       <div className="p-8 text-center text-slate-500">
-        Plavec nenalezen.
+        Profil plavce nebyl nalezen.
       </div>
     );
   }
 
-  // --- VÝPOČTY PRO PŘEHLED (KILOMETRY, JEDNOTKY, SUCHÁ) ---
+  // --- VÝPOČTY PRO PŘEHLED ---[cite: 14]
   const validAttendance = attendance.filter(row => {
     const m = Number(row.morning_km || 0);
     const a = Number(row.afternoon_km || 0);
@@ -232,7 +205,6 @@ export default function PlavecDetailDBPage() {
   startOfWeek.setDate(diff);
   startOfWeek.setHours(0, 0, 0, 0);
 
-  // Kilometry
   let kmWeek = 0;
   let kmMonth = 0;
   let kmYear = 0;
@@ -243,7 +215,6 @@ export default function PlavecDetailDBPage() {
   let kmMorningMonth = 0;
   let kmAfternoonMonth = 0;
 
-  // Jednotky plavání
   let unitsMorningWeek = 0;
   let unitsAfternoonWeek = 0;
   let unitsWeek = 0;
@@ -254,7 +225,6 @@ export default function PlavecDetailDBPage() {
   let unitsAfternoonYear = 0;
   let unitsYear = 0;
 
-  // Suchá příprava (minuty a jednotky)
   let dryMinutesWeek = 0;
   let dryMinutesMonth = 0;
   let dryMinutesYear = 0;
@@ -304,27 +274,32 @@ export default function PlavecDetailDBPage() {
     }
   });
 
-  const getTargetYearKm = (birthYear?: number) => {
-    if (!birthYear) return 1300;
-    if (birthYear <= 2010) return 1300;
-    if (birthYear === 2011) return 1200;
-    if (birthYear === 2012) return 1100;
-    if (birthYear === 2013) return 800;
-    if (birthYear === 2014) return 650;
-    if (birthYear === 2015) return 450;
-    if (birthYear === 2016) return 300;
-    return 200; // 2017 a ml.
+  // Dynamické cíle podle ročníku narození plavce[cite: 16]
+  const getTargetsByBirthYear = (birthYear?: number) => {
+    let yearKm = 1300;
+    if (birthYear) {
+      if (birthYear <= 2010) yearKm = 1300;
+      else if (birthYear === 2011) yearKm = 1200;
+      else if (birthYear === 2012) yearKm = 1100;
+      else if (birthYear === 2013) yearKm = 800;
+      else if (birthYear === 2014) yearKm = 650;
+      else if (birthYear === 2015) yearKm = 450;
+      else if (birthYear === 2016) yearKm = 300;
+      else yearKm = 200; // 2017 a mladší
+    }
+    return {
+      targetYearKm: yearKm,
+      targetMonthKm: Math.round(yearKm / 10),
+      targetWeekKm: Math.round(yearKm / 42)
+    };
   };
 
-  const targetYearKm = getTargetYearKm(swimmer?.birth_year);
-  const targetMonthKm = Math.round(targetYearKm / 10);
-  const targetWeekKm = Math.round(targetYearKm / 42);
+  const { targetYearKm, targetMonthKm, targetWeekKm } = getTargetsByBirthYear(swimmer?.birth_year);
 
   const yearPercent = Math.min(Math.round((kmYear / targetYearKm) * 100), 100);
   const monthPercent = Math.min(Math.round((kmMonth / targetMonthKm) * 100), 100);
   const weekPercent = Math.min(Math.round((kmWeek / targetWeekKm) * 100), 100);
 
-  // --- STATISTIKY PRO OSTATNÍ KARTY ---
   const pbMap: { [key: string]: { scTime?: string; scDate?: string; lcTime?: string; lcDate?: string; timeMsSc?: number; timeMsLc?: number; scYear?: number; lcYear?: number } } = {};
 
   cspsOutputs.forEach(item => {
@@ -394,21 +369,17 @@ export default function PlavecDetailDBPage() {
     return `${seconds}.${hundredths < 10 ? '0' : ''}${hundredths}`;
   }
 
-  const currentSwimmerIndex = teamSwimmers.findIndex(s => s.id === swimmerId);
-  const prevSwimmer = currentSwimmerIndex > 0 ? teamSwimmers[currentSwimmerIndex - 1] : null;
-  const nextSwimmer = currentSwimmerIndex !== -1 && currentSwimmerIndex < teamSwimmers.length - 1 ? teamSwimmers[currentSwimmerIndex + 1] : null;
-
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto space-y-6 pb-24 md:pb-8 font-sans text-slate-800">
       
-      {/* Horní lišta: Zpět + Výběr roku + Přepínání plavců */}
+      {/* Horní lišta: Zpět + Výběr roku */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <button
-          onClick={() => router.back()}
+          onClick={() => router.push('/dashboard')}
           className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors bg-white px-3.5 py-2 rounded-xl border border-slate-200/80 shadow-xs cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Zpět na seznam</span>
+          <span>Zpět na nástěnku</span>
         </button>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -425,44 +396,6 @@ export default function PlavecDetailDBPage() {
                 <option value={currentYear - 1}>{currentYear - 1} (loni)</option>
                 <option value={currentYear - 2}>{currentYear - 2}</option>
               </select>
-            </div>
-          )}
-
-          {isCoachOrAdmin && teamSwimmers.length > 1 && (
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200/80 shadow-xs text-xs">
-              <span className="text-slate-400 font-medium hidden sm:inline">Plavec:</span>
-              
-              <button
-                disabled={!prevSwimmer}
-                onClick={() => prevSwimmer && router.push(window.location.pathname.replace(swimmerId, prevSwimmer.id))}
-                title={prevSwimmer ? `${prevSwimmer.first_name} ${prevSwimmer.last_name}` : ''}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition-colors max-w-[130px] sm:max-w-[160px] truncate ${
-                  prevSwimmer ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer' : 'text-slate-300 cursor-not-allowed'
-                }`}
-              >
-                <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">
-                  {prevSwimmer ? `${prevSwimmer.first_name} ${prevSwimmer.last_name}` : 'Předchozí'}
-                </span>
-              </button>
-
-              <span className="font-bold text-slate-900 px-1 shrink-0">
-                {currentSwimmerIndex + 1} / {teamSwimmers.length}
-              </span>
-
-              <button
-                disabled={!nextSwimmer}
-                onClick={() => nextSwimmer && router.push(window.location.pathname.replace(swimmerId, nextSwimmer.id))}
-                title={nextSwimmer ? `${nextSwimmer.first_name} ${nextSwimmer.last_name}` : ''}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-semibold transition-colors max-w-[130px] sm:max-w-[160px] truncate ${
-                  nextSwimmer ? 'bg-slate-100 text-slate-700 hover:bg-slate-200 cursor-pointer' : 'text-slate-300 cursor-not-allowed'
-                }`}
-              >
-                <span className="truncate">
-                  {nextSwimmer ? `${nextSwimmer.first_name} ${nextSwimmer.last_name}` : 'Další'}
-                </span>
-                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-              </button>
             </div>
           )}
         </div>
@@ -485,7 +418,7 @@ export default function PlavecDetailDBPage() {
             </div>
             <p className="text-xs sm:text-sm text-slate-500 mt-1 flex items-center gap-1.5">
               <Activity className="w-4 h-4 text-emerald-500" />
-              <span>Plavec {swimmer.birth_year ? `• Ročník ${swimmer.birth_year}` : ''}</span>
+              <span>Statistiky profilu {swimmer.birth_year ? `• Ročník ${swimmer.birth_year}` : ''}</span>
             </p>
           </div>
         </div>
@@ -516,23 +449,21 @@ export default function PlavecDetailDBPage() {
           >
             Závody ({competitionsTotalCount})
           </button>
-          {isLoggedIn && (
-            <button
-              onClick={() => setActiveTab('treninky')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                activeTab === 'treninky' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Tréninky & Docházka
-            </button>
-          )}
+          <button
+            onClick={() => setActiveTab('treninky')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+              activeTab === 'treninky' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Tréninky & Docházka
+          </button>
         </div>
       </div>
 
       {activeTab === 'prehled' && (
         <div className="space-y-6">
           
-          {/* JEDNOTNÁ TRÉNINKOVÁ KARTA (TABULKA SE 12 SLOUPCI PRO TÝDEN, MĚSÍC, ROK) */}
+          {/* TRÉNINKOVÉ STATISTIKY */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
@@ -543,101 +474,79 @@ export default function PlavecDetailDBPage() {
               </div>
             </div>
 
-            {isLoggedIn ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-center border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200/80 text-slate-400 font-bold uppercase text-[10px]">
-                      <th className="py-2.5 px-3 text-left" rowSpan={2}>Část dne</th>
-                      <th colSpan={4} className="py-2 px-2 border-l border-slate-200 bg-blue-50/40 text-blue-800 font-bold">Týden</th>
-                      <th colSpan={4} className="py-2 px-2 border-l border-slate-200 bg-indigo-50/40 text-indigo-800 font-bold">Měsíc</th>
-                      <th colSpan={4} className="py-2 px-2 border-l border-slate-200 bg-emerald-50/40 text-emerald-800 font-bold">Rok ({selectedYear})</th>
-                    </tr>
-                    <tr className="border-b border-slate-200/80 text-slate-500 font-bold uppercase text-[9px] bg-slate-50">
-                      {/* Týden */}
-                      <th className="py-2 px-2 border-l border-slate-200">Jednotky plavání</th>
-                      <th className="py-2 px-2">Kilometry plavání</th>
-                      <th className="py-2 px-2">Jednotky suché</th>
-                      <th className="py-2 px-2">Minuty suché</th>
-                      {/* Měsíc */}
-                      <th className="py-2 px-2 border-l border-slate-200">Jednotky plavání</th>
-                      <th className="py-2 px-2">Kilometry plavání</th>
-                      <th className="py-2 px-2">Jednotky suché</th>
-                      <th className="py-2 px-2">Minuty suché</th>
-                      {/* Rok */}
-                      <th className="py-2 px-2 border-l border-slate-200">Jednotky plavání</th>
-                      <th className="py-2 px-2">Kilometry plavání</th>
-                      <th className="py-2 px-2">Jednotky suché</th>
-                      <th className="py-2 px-2">Minuty suché</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                    {/* Ráno */}
-                    <tr className="bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                      <td className="py-3 px-3 text-left font-semibold text-slate-500 uppercase text-[10px]">Ráno</td>
-                      {/* Týden ráno */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsMorningWeek}</td>
-                      <td className="py-3 px-2 font-bold">{kmMorningWeek.toFixed(1)} km</td>
-                      <td className="py-3 px-2 text-slate-400">—</td>
-                      <td className="py-3 px-2 text-slate-400">—</td>
-                      {/* Měsíc ráno */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsMorningMonth}</td>
-                      <td className="py-3 px-2 font-bold">{kmMorningMonth.toFixed(1)} km</td>
-                      <td className="py-3 px-2 text-slate-400">—</td>
-                      <td className="py-3 px-2 text-slate-400">—</td>
-                      {/* Rok ráno */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsMorningYear}</td>
-                      <td className="py-3 px-2 font-bold">{kmMorningYear.toFixed(1)} km</td>
-                      <td className="py-3 px-2 text-slate-400">—</td>
-                      <td className="py-3 px-2 text-slate-400">—</td>
-                    </tr>
-                    {/* Odpoledne */}
-                    <tr className="bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                      <td className="py-3 px-3 text-left font-semibold text-slate-500 uppercase text-[10px]">Odpoledne</td>
-                      {/* Týden odpoledne */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsAfternoonWeek}</td>
-                      <td className="py-3 px-2 font-bold">{kmAfternoonWeek.toFixed(1)} km</td>
-                      <td className="py-3 px-2 font-bold text-amber-700">{dryUnitsWeek}</td>
-                      <td className="py-3 px-2 font-bold text-amber-600">{dryMinutesWeek} min</td>
-                      {/* Měsíc odpoledne */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsAfternoonMonth}</td>
-                      <td className="py-3 px-2 font-bold">{kmAfternoonMonth.toFixed(1)} km</td>
-                      <td className="py-3 px-2 font-bold text-amber-700">{dryUnitsMonth}</td>
-                      <td className="py-3 px-2 font-bold text-amber-600">{dryMinutesMonth} min</td>
-                      {/* Rok odpoledne */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsAfternoonYear}</td>
-                      <td className="py-3 px-2 font-bold">{kmAfternoonYear.toFixed(1)} km</td>
-                      <td className="py-3 px-2 font-bold text-amber-700">{dryUnitsYear}</td>
-                      <td className="py-3 px-2 font-bold text-amber-600">{dryMinutesYear} min</td>
-                    </tr>
-                    {/* Celkem */}
-                    <tr className="bg-blue-50/40 font-bold text-slate-900">
-                      <td className="py-3 px-3 text-left font-bold text-blue-600 uppercase text-[10px]">Celkem</td>
-                      {/* Týden celkem (součet ráno + odpoledne) */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsMorningWeek + unitsAfternoonWeek}</td>
-                      <td className="py-3 px-2 text-blue-700">{kmWeek.toFixed(1)} km</td>
-                      <td className="py-3 px-2 text-amber-700">{dryUnitsWeek}</td>
-                      <td className="py-3 px-2 text-amber-600">{dryMinutesWeek} min</td>
-                      {/* Měsíc celkem (součet ráno + odpoledne) */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsMorningMonth + unitsAfternoonMonth}</td>
-                      <td className="py-3 px-2 text-blue-700">{kmMonth.toFixed(1)} km</td>
-                      <td className="py-3 px-2 text-amber-700">{dryUnitsMonth}</td>
-                      <td className="py-3 px-2 text-amber-600">{dryMinutesMonth} min</td>
-                      {/* Rok celkem (součet ráno + odpoledne) */}
-                      <td className="py-3 px-2 border-l border-slate-200">{unitsMorningYear + unitsAfternoonYear}</td>
-                      <td className="py-3 px-2 text-blue-700">{kmYear.toFixed(1)} km</td>
-                      <td className="py-3 px-2 text-amber-700">{dryUnitsYear}</td>
-                      <td className="py-3 px-2 text-amber-600">{dryMinutesYear} min</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="py-2 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5 font-medium">
-                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                <span>Pouze pro přihlášené</span>
-              </div>
-            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-center border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200/80 text-slate-400 font-bold uppercase text-[10px]">
+                    <th className="py-2.5 px-3 text-left" rowSpan={2}>Část dne</th>
+                    <th colSpan={4} className="py-2 px-2 border-l border-slate-200 bg-blue-50/40 text-blue-800 font-bold">Týden</th>
+                    <th colSpan={4} className="py-2 px-2 border-l border-slate-200 bg-indigo-50/40 text-indigo-800 font-bold">Měsíc</th>
+                    <th colSpan={4} className="py-2 px-2 border-l border-slate-200 bg-emerald-50/40 text-emerald-800 font-bold">Rok ({selectedYear})</th>
+                  </tr>
+                  <tr className="border-b border-slate-200/80 text-slate-500 font-bold uppercase text-[9px] bg-slate-50">
+                    <th className="py-2 px-2 border-l border-slate-200">Jednotky plavání</th>
+                    <th className="py-2 px-2">Kilometry plavání</th>
+                    <th className="py-2 px-2">Jednotky suché</th>
+                    <th className="py-2 px-2">Minuty suché</th>
+                    <th className="py-2 px-2 border-l border-slate-200">Jednotky plavání</th>
+                    <th className="py-2 px-2">Kilometry plavání</th>
+                    <th className="py-2 px-2">Jednotky suché</th>
+                    <th className="py-2 px-2">Minuty suché</th>
+                    <th className="py-2 px-2 border-l border-slate-200">Jednotky plavání</th>
+                    <th className="py-2 px-2">Kilometry plavání</th>
+                    <th className="py-2 px-2">Jednotky suché</th>
+                    <th className="py-2 px-2">Minuty suché</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                  <tr className="bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                    <td className="py-3 px-3 text-left font-semibold text-slate-500 uppercase text-[10px]">Ráno</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsMorningWeek}</td>
+                    <td className="py-3 px-2 font-bold">{kmMorningWeek.toFixed(1)} km</td>
+                    <td className="py-3 px-2 text-slate-400">—</td>
+                    <td className="py-3 px-2 text-slate-400">—</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsMorningMonth}</td>
+                    <td className="py-3 px-2 font-bold">{kmMorningMonth.toFixed(1)} km</td>
+                    <td className="py-3 px-2 text-slate-400">—</td>
+                    <td className="py-3 px-2 text-slate-400">—</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsMorningYear}</td>
+                    <td className="py-3 px-2 font-bold">{kmMorningYear.toFixed(1)} km</td>
+                    <td className="py-3 px-2 text-slate-400">—</td>
+                    <td className="py-3 px-2 text-slate-400">—</td>
+                  </tr>
+                  <tr className="bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                    <td className="py-3 px-3 text-left font-semibold text-slate-500 uppercase text-[10px]">Odpoledne</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsAfternoonWeek}</td>
+                    <td className="py-3 px-2 font-bold">{kmAfternoonWeek.toFixed(1)} km</td>
+                    <td className="py-3 px-2 font-bold text-amber-700">{dryUnitsWeek}</td>
+                    <td className="py-3 px-2 font-bold text-amber-600">{dryMinutesWeek} min</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsAfternoonMonth}</td>
+                    <td className="py-3 px-2 font-bold">{kmAfternoonMonth.toFixed(1)} km</td>
+                    <td className="py-3 px-2 font-bold text-amber-700">{dryUnitsMonth}</td>
+                    <td className="py-3 px-2 font-bold text-amber-600">{dryMinutesMonth} min</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsAfternoonYear}</td>
+                    <td className="py-3 px-2 font-bold">{kmAfternoonYear.toFixed(1)} km</td>
+                    <td className="py-3 px-2 font-bold text-amber-700">{dryUnitsYear}</td>
+                    <td className="py-3 px-2 font-bold text-amber-600">{dryMinutesYear} min</td>
+                  </tr>
+                  <tr className="bg-blue-50/40 font-bold text-slate-900">
+                    <td className="py-3 px-3 text-left font-bold text-blue-600 uppercase text-[10px]">Celkem</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsMorningWeek + unitsAfternoonWeek}</td>
+                    <td className="py-3 px-2 text-blue-700">{kmWeek.toFixed(1)} km</td>
+                    <td className="py-3 px-2 text-amber-700">{dryUnitsWeek}</td>
+                    <td className="py-3 px-2 text-amber-600">{dryMinutesWeek} min</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsMorningMonth + unitsAfternoonMonth}</td>
+                    <td className="py-3 px-2 text-blue-700">{kmMonth.toFixed(1)} km</td>
+                    <td className="py-3 px-2 text-amber-700">{dryUnitsMonth}</td>
+                    <td className="py-3 px-2 text-amber-600">{dryMinutesMonth} min</td>
+                    <td className="py-3 px-2 border-l border-slate-200">{unitsMorningYear + unitsAfternoonYear}</td>
+                    <td className="py-3 px-2 text-blue-700">{kmYear.toFixed(1)} km</td>
+                    <td className="py-3 px-2 text-amber-700">{dryUnitsYear}</td>
+                    <td className="py-3 px-2 text-amber-600">{dryMinutesYear} min</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {/* PLNĚNÍ PLÁNU */}
@@ -647,53 +556,44 @@ export default function PlavecDetailDBPage() {
                 <Target className="w-5 h-5 text-blue-600" />
                 <span>Plnění plánu ({selectedYear})</span>
               </h3>
-              {isLoggedIn && (
-                <span className="text-xs text-slate-400 font-medium">Roční cíl: {targetYearKm} km</span>
-              )}
+              <span className="text-xs text-slate-400 font-medium">Roční cíl: {targetYearKm} km {swimmer.birth_year ? `(Ročník ${swimmer.birth_year})` : ''}</span>
             </div>
 
-            {isLoggedIn ? (
-              <div className="space-y-4">
-                {selectedYear === currentYear && (
-                  <>
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs font-semibold">
-                        <span className="text-slate-600">Týden: {kmWeek.toFixed(1)} / {targetWeekKm} km</span>
-                        <span className="text-slate-900">{weekPercent}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-blue-600 h-full rounded-full transition-all" style={{ width: `${weekPercent}%` }}></div>
-                      </div>
+            <div className="space-y-4">
+              {selectedYear === currentYear && (
+                <>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-semibold">
+                      <span className="text-slate-600">Týden: {kmWeek.toFixed(1)} / {targetWeekKm} km</span>
+                      <span className="text-slate-900">{weekPercent}%</span>
                     </div>
-
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs font-semibold">
-                        <span className="text-slate-600">Měsíc: {kmMonth.toFixed(1)} / {targetMonthKm} km</span>
-                        <span className="text-slate-900">{monthPercent}%</span>
-                      </div>
-                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                        <div className="bg-blue-600 h-full rounded-full transition-all" style={{ width: `${monthPercent}%` }}></div>
-                      </div>
+                    <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                      <div className="bg-blue-600 h-full rounded-full transition-all" style={{ width: `${weekPercent}%` }}></div>
                     </div>
-                  </>
-                )}
+                  </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs font-semibold">
-                    <span className="text-slate-600">Rok: {kmYear.toFixed(1)} / {targetYearKm} km</span>
-                    <span className="text-slate-900">{yearPercent}%</span>
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-semibold">
+                      <span className="text-slate-600">Měsíc: {kmMonth.toFixed(1)} / {targetMonthKm} km</span>
+                      <span className="text-slate-900">{monthPercent}%</span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                      <div className="bg-blue-600 h-full rounded-full transition-all" style={{ width: `${monthPercent}%` }}></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full rounded-full transition-all" style={{ width: `${yearPercent}%` }}></div>
-                  </div>
+                </>
+              )}
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-semibold">
+                  <span className="text-slate-600">Rok: {kmYear.toFixed(1)} / {targetYearKm} km</span>
+                  <span className="text-slate-900">{yearPercent}%</span>
+                </div>
+                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full transition-all" style={{ width: `${yearPercent}%` }}></div>
                 </div>
               </div>
-            ) : (
-              <div className="py-8 text-center text-xs text-slate-400 flex flex-col items-center justify-center gap-2 font-medium">
-                <Lock className="w-5 h-5 text-slate-300" />
-                <span>Detailní plnění tréninkového plánu je dostupné pouze po přihlášení.</span>
-              </div>
-            )}
+            </div>
           </div>
 
           {/* DRŽENÉ KLUBOVÉ REKORDY */}
@@ -704,14 +604,12 @@ export default function PlavecDetailDBPage() {
                   <Medal className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-slate-900">Držené klubové rekordy plavce</h3>
-                  <p className="text-xs text-slate-500">Aktivní platné klubové rekordy v držení tohoto plavce</p>
+                  <h3 className="font-bold text-base text-slate-900">Držené klubové rekordy</h3>
+                  <p className="text-xs text-slate-500">Aktivní platné klubové rekordy</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="px-3 py-1 bg-white border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-600 shadow-2xs">
-                  Celkem rekordů: <span className="text-amber-600 font-bold">{clubRecords.length}</span>
-                </div>
+              <div className="px-3 py-1 bg-white border border-slate-200/80 rounded-xl text-xs font-semibold text-slate-600 shadow-2xs">
+                Celkem rekordů: <span className="text-amber-600 font-bold">{clubRecords.length}</span>
               </div>
             </div>
 
@@ -747,7 +645,7 @@ export default function PlavecDetailDBPage() {
               </div>
             ) : (
               <div className="p-8 text-center text-xs text-slate-400 italic bg-white/50 rounded-2xl border border-dashed border-slate-200">
-                V databázi nejsou pro tohoto plavce evidovány žádné klubové rekordy.
+                V databázi nejsou evidovány žádné klubové rekordy.
               </div>
             )}
           </div>
@@ -807,7 +705,7 @@ export default function PlavecDetailDBPage() {
                 </table>
               ) : (
                 <div className="p-8 text-center text-xs text-slate-400 italic">
-                  {swimmer.csps_id ? 'Nepodařilo se načíst data z ČSPS API nebo plavec nemá žádné výstupy.' : 'Plavec nemá vyplněné csps_id v profilu.'}
+                  {swimmer.csps_id ? 'Nepodařilo se načíst data z ČSPS API nebo nejsou k dispozici žádné výstupy.' : 'Profil nemá vyplněné csps_id.'}
                 </div>
               )}
             </div>
@@ -823,9 +721,9 @@ export default function PlavecDetailDBPage() {
               <div>
                 <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
                   <Trophy className="w-5 h-5 text-purple-600" />
-                  <span>Seznam všech závodů (ze všech let)</span>
+                  <span>Seznam závodů</span>
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Kompletní historie závodů a startů z ČSPS registru.</p>
+                <p className="text-xs text-slate-500 mt-0.5">Kompletní historie závodů a startů.</p>
               </div>
               <div className="px-3 py-1.5 bg-purple-50 border border-purple-200/80 rounded-xl text-xs font-semibold text-purple-700 flex items-center gap-2">
                 <span>V roce {currentYear}: <strong className="font-bold">{competitionsCurrentYearCount}</strong></span>
@@ -936,7 +834,7 @@ export default function PlavecDetailDBPage() {
               </div>
             ) : (
               <div className="p-12 text-center text-xs text-slate-400 italic bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-                {swimmer.csps_id ? 'V ČSPS registru nejsou pro tohoto plavce evidovány žádné závody.' : 'Plavec nemá vyplněné csps_id v profilu.'}
+                {swimmer.csps_id ? 'V registru nejsou pro tento profil evidovány žádné závody.' : 'Profil nemá vyplněné csps_id.'}
               </div>
             )}
           </div>
@@ -944,7 +842,7 @@ export default function PlavecDetailDBPage() {
       )}
 
       {/* ZÁLOŽKA: Tréninky & Docházka */}
-      {isLoggedIn && activeTab === 'treninky' && (
+      {activeTab === 'treninky' && (
         <div className="bg-white border border-slate-200/80 rounded-2xl shadow-sm p-6 space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-2">
             <div>
@@ -1017,7 +915,7 @@ export default function PlavecDetailDBPage() {
             </div>
           ) : (
             <div className="py-12 text-center text-xs text-slate-400 italic bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-              Žádné aktivní záznamy docházky v databázi.
+              Žádné záznamy docházky v databázi.
             </div>
           )}
         </div>

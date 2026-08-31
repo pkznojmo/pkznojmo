@@ -24,36 +24,34 @@ import {
 } from 'lucide-react';
 
 const ROLE_NAV_ITEMS: Record<string, Array<{ name: string; href: string; icon: any }>> = {
-  // ... (vaše role nav items zůstávají stejné)
   admin: [
     { name: 'Týmy', href: '/dashboard/tymy', icon: Users },
     { name: 'Závody', href: '/dashboard/zavody', icon: Trophy },
     { name: 'Žebříčky', href: '/dashboard/zebricky', icon: BarChart2 },
     { name: 'Správa uživatelů', href: '/dashboard/sprava', icon: Settings },
     { name: 'Úkoly', href: '/dashboard/ukoly', icon: CheckSquare },
-    { name: 'Můj účet', href: '/dashboard/profil', icon: User },
+    { name: 'Můj účet', href: '/dashboard', icon: User },
   ],
   trainer: [
     { name: 'Týmy', href: '/dashboard/tymy', icon: Users },
     { name: 'Závody', href: '/dashboard/zavody', icon: Trophy },
     { name: 'Žebříčky', href: '/dashboard/zebricky', icon: BarChart2 },
-    { name: 'Můj účet', href: '/dashboard/profil', icon: User },
+    { name: 'Můj účet', href: '/dashboard', icon: User },
   ],
   marketing: [
     { name: 'Úkoly', href: '/dashboard/ukoly', icon: CheckSquare },
-    { name: 'Můj účet', href: '/dashboard/profil', icon: User },
+    { name: 'Můj účet', href: '/dashboard', icon: User },
   ],
   swimmer: [
     { name: 'Statistika', href: '/dashboard/statistika', icon: Activity },
     { name: 'Závody', href: '/dashboard/zavody', icon: Trophy },
     { name: 'Žebříčky', href: '/dashboard/zebricky', icon: BarChart2 },
-    { name: 'Můj účet', href: '/dashboard/profil', icon: User },
+    { name: 'Můj účet', href: '/dashboard', icon: User },
   ],
   parent: [
-    { name: 'Statistika', href: '/dashboard/statistika', icon: Activity },
     { name: 'Závody', href: '/dashboard/zavody', icon: Trophy },
     { name: 'Žebříčky', href: '/dashboard/zebricky', icon: BarChart2 },
-    { name: 'Můj účet', href: '/dashboard/profil', icon: User },
+    { name: 'Můj účet', href: '/dashboard', icon: User },
   ],
 };
 

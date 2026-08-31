@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useProfile } from '@/components/ProfileContext'; // <-- 1. Import kontextu
 import { 
   Users, 
   Trophy, 
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 
 const ROLE_NAV_ITEMS: Record<string, Array<{ name: string; href: string; icon: any }>> = {
+  // ... (vaše role nav items zůstávají stejné)
   admin: [
     { name: 'Týmy', href: '/dashboard/tymy', icon: Users },
     { name: 'Závody', href: '/dashboard/zavody', icon: Trophy },
@@ -63,23 +65,15 @@ const ROLE_LABELS: Record<string, string> = {
   parent: 'Rodič',
 };
 
-interface ProfileOption {
-  id: string;
-  label: string;
-  subtitle: string;
-  role: string;
-  type: 'self' | 'child';
-  childId?: string;
-}
-
 export default function Sidebar() {
   const pathname = usePathname();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [availableProfiles, setAvailableProfiles] = useState<ProfileOption[]>([]);
-  const [activeProfile, setActiveProfile] = useState<ProfileOption | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // <-- 2. Použití globálního stavu z kontextu místo lokálního useState
+  const { activeProfile, setActiveProfile, availableProfiles, setAvailableProfiles } = useProfile();
 
   useEffect(() => {
     const fetchUserDataAndProfiles = async () => {
@@ -105,12 +99,12 @@ export default function Sidebar() {
           ? `${profileData.first_name || ''} ${profileData.last_name || ''}`.trim()
           : fallbackName;
 
-        const selfProfiles: ProfileOption[] = userRoles.map((role) => ({
+        const selfProfiles = userRoles.map((role) => ({
           id: `self-${role}`,
           label: displayName,
           subtitle: `Moje role: ${ROLE_LABELS[role] || role}`,
           role: role,
-          type: 'self',
+          type: 'self' as const,
         }));
 
         const { data: linkData } = await supabase
@@ -125,7 +119,7 @@ export default function Sidebar() {
           `)
           .eq('parent_id', user.id);
 
-        const childProfiles: ProfileOption[] = (linkData || [])
+        const childProfiles = (linkData || [])
           .map((item: any) => item.swimmers)
           .filter(Boolean)
           .map((child: any) => ({
@@ -138,9 +132,11 @@ export default function Sidebar() {
           }));
 
         const combined = [...selfProfiles, ...childProfiles];
+        
+        // <-- 3. Uložení do globálního kontextu
         setAvailableProfiles(combined);
 
-        if (combined.length > 0) {
+        if (combined.length > 0 && !activeProfile) {
           setActiveProfile(combined[0]);
         }
       } catch (err) {
@@ -151,7 +147,7 @@ export default function Sidebar() {
     };
 
     fetchUserDataAndProfiles();
-  }, []);
+  }, [activeProfile, setActiveProfile, setAvailableProfiles]);
 
   const currentNavItems = activeProfile ? (ROLE_NAV_ITEMS[activeProfile.role] || []) : [];
   const primaryMobileNav = currentNavItems.slice(0, 3);

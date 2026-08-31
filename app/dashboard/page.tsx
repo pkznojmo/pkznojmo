@@ -145,46 +145,47 @@ export default function ProfilePage() {
 
         setChildren(fetchedChildren);
       }
-    } else {
-      // REŽIM PLAVEC: předvyplnění e-mailu a načtení rodičů
-      if (isRealEmail(authUser.email)) {
-        setSelfEmail(authUser.email || '');
-      }
+    }
 
-      const { data: linkData, error } = await supabase
-        .from('parent_swimmers')
-        .select(`
-          parent_id,
-          parents:parent_id (
-            id,
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('swimmer_id', authUser.id);
+    // Předvyplnění vlastního e-mailu (pokud není reálný, necháme prázdné nebo upravitelné)
+    if (authUser.email && isRealEmail(authUser.email)) {
+      setSelfEmail(authUser.email);
+    }
 
-      if (error) {
-        console.error('Chyba načítání rodičů:', error.message || error);
-      }
+    // Načtení rodičů (pokud je plavec)
+    const { data: linkData, error } = await supabase
+      .from('parent_swimmers')
+      .select(`
+        parent_id,
+        parents:parent_id (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
+      .eq('swimmer_id', authUser.id);
 
-      if (linkData) {
-        const fetchedParents = linkData
-          .map((item: any) => {
-            const p = item.parents;
-            if (!p) return null;
-            
-            const fullName = `${p.first_name || ''} ${p.last_name || ''}`.trim();
-            return {
-              id: p.id,
-              email: p.email || 'E-mail nedostupný',
-              full_name: fullName || 'Rodič bez jména',
-            };
-          })
-          .filter(Boolean) as ParentInfo[];
+    if (error) {
+      console.error('Chyba načítání rodičů:', error.message || error);
+    }
 
-        setParents(fetchedParents);
-      }
+    if (linkData) {
+      const fetchedParents = linkData
+        .map((item: any) => {
+          const p = item.parents;
+          if (!p) return null;
+          
+          const fullName = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+          return {
+            id: p.id,
+            email: p.email || 'E-mail nedostupný',
+            full_name: fullName || 'Rodič bez jména',
+          };
+        })
+        .filter(Boolean) as ParentInfo[];
+
+      setParents(fetchedParents);
     }
   }, []);
 
@@ -380,7 +381,7 @@ export default function ProfilePage() {
     }
   };
 
-  // SAMOSTATNÁ AKCE: Plavec si sám nastavuje e-mail a heslo
+  // SAMOSTATNÁ AKCE: Uživatel (plavec / rodič) si sám nastavuje e-mail a heslo
   const handleSwimmerSelfUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
@@ -492,6 +493,86 @@ export default function ProfilePage() {
             <span>Odhlásit se</span>
           </button>
         </div>
+
+        {/* ========================================================= */}
+        {/* POVINNÁ / UNIVERZÁLNÍ KARTA: ZMĚNA INTERNÍHO E-MAILU NA REÁLNÝ */}
+        {/* Zobrazuje se VŽDY, KDYKOLIV je aktuální e-mail typu @internal.pkznojmo.cz */}
+        {/* ========================================================= */}
+        {!isRealEmail(user.email) && (
+          <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-6 sm:p-8 shadow-md space-y-4">
+            <div className="border-b border-blue-200 pb-3">
+              <h2 className="text-lg font-bold text-blue-950 flex items-center gap-2">
+                <Mail className="h-5 w-5 text-blue-600" />
+                <span>Nastavte si svůj osobní e-mail a heslo</span>
+              </h2>
+              <p className="text-xs text-blue-800 mt-1">
+                Váš účet používá výchozí interní adresu (<code className="font-mono bg-blue-100 px-1 py-0.5 rounded">@internal.pkznojmo.cz</code>). Pro plné zabezpečení a možnost obnovy hesla je nutné si nastavit vlastní osobní e-mail a nové heslo.
+              </p>
+            </div>
+
+            {selfFormSuccess && (
+              <div className="p-3 bg-green-100 border border-green-300 text-green-800 rounded-xl text-sm font-semibold flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                <span>{selfFormSuccess}</span>
+              </div>
+            )}
+
+            {selfFormError && (
+              <div className="p-3 bg-red-100 border border-red-300 text-red-800 rounded-xl text-sm font-semibold flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+                <span>{selfFormError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSwimmerSelfUpdate} className="space-y-4 pt-1">
+              <div>
+                <label className="block text-xs font-bold text-blue-950 uppercase tracking-wider mb-1">
+                  Osobní e-mail
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-400" />
+                  <input
+                    type="email"
+                    required
+                    value={selfEmail}
+                    onChange={(e) => setSelfEmail(e.target.value)}
+                    placeholder="např. jan.novak@gmail.com"
+                    className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-blue-300 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-blue-950 uppercase tracking-wider mb-1">
+                  Nové heslo
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-blue-400" />
+                  <input
+                    type="password"
+                    required
+                    value={selfPassword}
+                    onChange={(e) => setSelfPassword(e.target.value)}
+                    placeholder="Zvolte heslo (min. 6 znaků)"
+                    className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-blue-300 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={selfFormLoading || !selfEmail}
+                className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-md shadow-blue-600/20 disabled:opacity-70"
+              >
+                {selfFormLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <span>Uložit e-mail a heslo</span>
+                )}
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* ========================================================= */}
         {/* REŽIM A: PŘIHLÁŠENÝ RODIČ (Správa dětí) */}
@@ -659,87 +740,10 @@ export default function ProfilePage() {
         )}
 
         {/* ========================================================= */}
-        {/* REŽIM B: PŘIHLÁŠENÝ PLAVEC */}
+        {/* REŽIM B: PŘIHLÁŠENÝ PLAVEC (Správa rodičů a připojení) */}
         {/* ========================================================= */}
         {!isParent && (
           <div className="space-y-6">
-
-            {/* KARTA 1: NASTAVENÍ VLASTNÍHO E-MAILU A HESLA PLAVCE */}
-            {!isRealEmail(user.email) && (
-              <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200/80 space-y-4">
-                <div className="border-b border-slate-100 pb-3">
-                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Mail className="h-5 w-5 text-blue-600" />
-                    <span>Můj přihlašovací e-mail a heslo</span>
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Přidáním osobního e-mailu se budete moci přihlašovat pomocí e-mailu i uživatelského jména a obnovovat si zapomenuté heslo.
-                  </p>
-                </div>
-
-                {selfFormSuccess && (
-                  <div className="p-3 bg-green-100 border border-green-300 text-green-800 rounded-xl text-sm font-semibold flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
-                    <span>{selfFormSuccess}</span>
-                  </div>
-                )}
-
-                {selfFormError && (
-                  <div className="p-3 bg-red-100 border border-red-300 text-red-800 rounded-xl text-sm font-semibold flex items-center gap-2">
-                    <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
-                    <span>{selfFormError}</span>
-                  </div>
-                )}
-
-                <form onSubmit={handleSwimmerSelfUpdate} className="space-y-4 pt-1">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      Osobní e-mail
-                    </label>
-                    <div className="relative">
-                      <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                      <input
-                        type="email"
-                        required
-                        value={selfEmail}
-                        onChange={(e) => setSelfEmail(e.target.value)}
-                        placeholder="např. jan.novak@gmail.com"
-                        className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      Nové heslo
-                    </label>
-                    <div className="relative">
-                      <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                      <input
-                        type="password"
-                        required
-                        value={selfPassword}
-                        onChange={(e) => setSelfPassword(e.target.value)}
-                        placeholder="Zvolte heslo (min. 6 znaků)"
-                        className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={selfFormLoading || !selfEmail}
-                    className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-md shadow-blue-600/20 disabled:opacity-70"
-                  >
-                    {selfFormLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <span>Uložit e-mail a heslo</span>
-                    )}
-                  </button>
-                </form>
-              </div>
-            )}
 
             {/* KARTA 2: SEZNAM PŘIPOJENÝCH RODIČŮ */}
             <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200/80 space-y-4">

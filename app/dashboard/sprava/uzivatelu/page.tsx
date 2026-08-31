@@ -36,18 +36,28 @@ export default function SpravaUzivateluPage() {
     first_name: '',
     last_name: '',
     email: '',
+    username: '',
     birth_year: '',
     team_id: '',
-    roles: 'swimmer',
+    csps_id: '',
+    roles: [] as string[],
     active: true,
   });
+
+  const availableRolesList = [
+    { id: 'admin', label: 'Administrátor' },
+    { id: 'trainer', label: 'Trenér' },
+    { id: 'marketing', label: 'Marketing' },
+    { id: 'parent', label: 'Rodič' },
+    { id: 'swimmer', label: 'Plavec' },
+  ];
 
   const loadData = async () => {
     setLoading(true);
     const [usersRes, teamsRes] = await Promise.all([
       supabase
         .from('profiles')
-        .select('id, first_name, last_name, email, roles, birth_year, team_id, active, created_at, teams!profiles_team_id_fkey(id, name)')
+        .select('id, first_name, last_name, email, username, roles, birth_year, team_id, active, created_at, csps_id, teams!profiles_team_id_fkey(id, name)')
         .order(sortField, { ascending: sortDirection === 'asc' }),
       supabase
         .from('teams')
@@ -77,7 +87,7 @@ export default function SpravaUzivateluPage() {
     const total = users.length;
     const active = users.filter(u => u.active !== false).length;
     const swimmers = users.filter(u => u.roles?.includes('swimmer')).length;
-    const trainers = users.filter(u => u.roles?.includes('trener') || u.roles?.includes('trainer')).length;
+    const trainers = users.filter(u => u.roles?.includes('trainer')).length;
     return { total, active, swimmers, trainers };
   }, [users]);
 
@@ -90,14 +100,39 @@ export default function SpravaUzivateluPage() {
     return Array.from(rolesSet);
   }, [users]);
 
+  // Pomocná funkce pro normalizaci diakritiky
+  const normalizeString = (str: string) => {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, '');
+  };
+
+  // Automaticky vypočítané hodnoty pro username a email v reálném čase
+  const calculatedUsername = useMemo(() => {
+    const cleanLastName = normalizeString(formData.last_name);
+    const cleanFirstName = normalizeString(formData.first_name);
+    if (cleanLastName && cleanFirstName && formData.birth_year) {
+      return `${cleanLastName}.${cleanFirstName}.${formData.birth_year}`;
+    }
+    return formData.username || '';
+  }, [formData.last_name, formData.first_name, formData.birth_year, formData.username]);
+
+  const calculatedEmail = useMemo(() => {
+    return calculatedUsername ? `${calculatedUsername}@internal.pkznojmo.cz` : (formData.email || '');
+  }, [calculatedUsername, formData.email]);
+
   // Filtrování a řazení
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const fullName = `${user.first_name || ''} ${user.last_name || ''}`.toLowerCase();
       const email = (user.email || '').toLowerCase();
+      const username = (user.username || '').toLowerCase();
       const query = searchQuery.toLowerCase();
 
-      const matchesSearch = fullName.includes(query) || email.includes(query);
+      const matchesSearch = fullName.includes(query) || email.includes(query) || username.includes(query);
       const matchesRole = selectedRole === 'ALL' || (user.roles && user.roles.includes(selectedRole));
       const matchesTeam = selectedTeam === 'ALL' || String(user.team_id) === selectedTeam;
       const matchesStatus = selectedStatus === 'ALL' || (selectedStatus === 'active' ? user.active !== false : user.active === false);
@@ -130,9 +165,11 @@ export default function SpravaUzivateluPage() {
       first_name: '',
       last_name: '',
       email: '',
+      username: '',
       birth_year: '',
       team_id: '',
-      roles: 'swimmer',
+      csps_id: '',
+      roles: ['swimmer'],
       active: true,
     });
     setIsModalOpen(true);
@@ -145,9 +182,11 @@ export default function SpravaUzivateluPage() {
       first_name: user.first_name || '',
       last_name: user.last_name || '',
       email: user.email || '',
+      username: user.username || '',
       birth_year: user.birth_year ? String(user.birth_year) : '',
       team_id: user.team_id ? String(user.team_id) : '',
-      roles: user.roles ? user.roles.join(', ') : 'swimmer',
+      csps_id: user.csps_id ? String(user.csps_id) : '',
+      roles: user.roles ? user.roles : ['swimmer'],
       active: user.active ?? true,
     });
     setIsModalOpen(true);
@@ -155,19 +194,85 @@ export default function SpravaUzivateluPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const rolesArray = formData.roles.split(',').map(r => r.trim()).filter(Boolean);
-    const payload = {
-      first_name: formData.first_name,
-      last_name: formData.last_name,
-      email: formData.email ? formData.email : null,
-      birth_year: formData.birth_year ? parseInt(formData.birth_year) : null,
-      team_id: formData.team_id ? parseInt(formData.team_id) : null,
-      roles: rolesArray.length > 0 ? rolesArray : ['swimmer'],
-      active: formData.active,
-      updated_at: new Date().toISOString(),
-    };
 
-    if (modalMode === 'edit') {
+    if (modalMode === 'create') {
+      const generatedUsername = calculatedUsername;
+      const generatedEmail = calculatedEmail;
+      const defaultPassword = 'Plaveme2026!';
+
+      if (!generatedUsername) {
+        alert('Vyplňte jméno, příjmení a ročník narození pro vygenerování přihlašovacích údajů.');
+        return;
+      }
+
+      // 1. Uložíme si aktuální session administrátora před registrací nového uživatele
+      const { data: currentSessionData } = await supabase.auth.getSession();
+
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: generatedEmail,
+        password: defaultPassword,
+        options: {
+          data: {
+            first_name: formData.first_name,
+            last_name: formData.last_name,
+          }
+        }
+      });
+
+      if (authError) {
+        alert('Chyba při vytváření auth účtu: ' + authError.message);
+        return;
+      }
+
+      // 2. Okamžitě obnovíme administrátorskou session, aby signUp nepřepsal přihlášení administrátora
+      if (currentSessionData.session) {
+        await supabase.auth.setSession({
+          access_token: currentSessionData.session.access_token,
+          refresh_token: currentSessionData.session.refresh_token,
+        });
+      }
+
+      const newUserId = authData.user?.id;
+      if (!newUserId) {
+        alert('Nepodařilo se získat ID nového uživatele.');
+        return;
+      }
+
+      const payload = {
+        id: newUserId,
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        email: generatedEmail,
+        username: generatedUsername,
+        birth_year: formData.birth_year ? parseInt(formData.birth_year) : null,
+        team_id: formData.team_id ? parseInt(formData.team_id) : 99,
+        csps_id: formData.csps_id ? parseInt(formData.csps_id) : null,
+        roles: formData.roles.length > 0 ? formData.roles : ['swimmer'],
+        active: formData.active,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert(payload);
+
+      if (profileError) {
+        alert('Chyba při zápisu profilu: ' + profileError.message);
+        return;
+      }
+
+    } else {
+      const payload = {
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        birth_year: formData.birth_year ? parseInt(formData.birth_year) : null,
+        team_id: formData.team_id ? parseInt(formData.team_id) : 99,
+        csps_id: formData.csps_id ? parseInt(formData.csps_id) : null,
+        roles: formData.roles.length > 0 ? formData.roles : ['swimmer'],
+        active: formData.active,
+        updated_at: new Date().toISOString(),
+      };
+
       const { error } = await supabase
         .from('profiles')
         .update(payload)
@@ -175,15 +280,6 @@ export default function SpravaUzivateluPage() {
 
       if (error) {
         alert('Chyba při úpravě: ' + error.message);
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from('profiles')
-        .insert([payload]);
-
-      if (error) {
-        alert('Chyba při vytváření: ' + error.message);
         return;
       }
     }
@@ -216,10 +312,11 @@ export default function SpravaUzivateluPage() {
   };
 
   const exportToCSV = () => {
-    const headers = ['Jmeno', 'Prijmeni', 'Email', 'Rocnik', 'Tim', 'Role', 'Aktivni'];
+    const headers = ['Jmeno', 'Prijmeni', 'Username', 'Email', 'Rocnik', 'Tim', 'Role', 'Aktivni'];
     const rows = filteredUsers.map(u => [
       u.first_name,
       u.last_name,
+      u.username || '',
       u.email || '',
       u.birth_year || '',
       u.teams?.name || '',
@@ -251,6 +348,16 @@ export default function SpravaUzivateluPage() {
     setSelectedUserIds(prev => 
       prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
     );
+  };
+
+  const handleRoleCheckboxChange = (roleId: string) => {
+    setFormData(prev => {
+      const exists = prev.roles.includes(roleId);
+      const updatedRoles = exists 
+        ? prev.roles.filter(r => r !== roleId)
+        : [...prev.roles, roleId];
+      return { ...prev, roles: updatedRoles };
+    });
   };
 
   if (loading) return <div className="p-12 text-center text-sm text-zinc-500 font-medium">Načítání komplexního modulu správy...</div>;
@@ -300,7 +407,7 @@ export default function SpravaUzivateluPage() {
           <div className="text-xl font-bold text-blue-600 mt-1">{stats.swimmers}</div>
         </div>
         <div className="bg-white p-3.5 rounded-lg border border-zinc-200 shadow-sm">
-          <div className="text-xs text-zinc-500 font-medium">Trenérů / Staff</div>
+          <div className="text-xs text-zinc-500 font-medium">Trenérů</div>
           <div className="text-xl font-bold text-indigo-600 mt-1">{stats.trainers}</div>
         </div>
       </div>
@@ -310,7 +417,7 @@ export default function SpravaUzivateluPage() {
         <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
-            placeholder="Hledat podle jména nebo e-mailu..."
+            placeholder="Hledat podle jména, username nebo e-mailu..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="flex-1 px-3 py-1.5 text-xs bg-zinc-50 border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-900"
@@ -379,6 +486,7 @@ export default function SpravaUzivateluPage() {
                 <th className="py-2.5 px-3 cursor-pointer hover:text-zinc-900" onClick={() => handleSort('last_name')}>
                   Jméno {sortField === 'last_name' && (sortDirection === 'asc' ? '▲' : '▼')}
                 </th>
+                <th className="py-2.5 px-3">Username</th>
                 <th className="py-2.5 px-3">E-mail</th>
                 <th className="py-2.5 px-3">Role</th>
                 <th className="py-2.5 px-3">Tým</th>
@@ -392,7 +500,7 @@ export default function SpravaUzivateluPage() {
             <tbody className="divide-y divide-zinc-200 text-xs">
               {paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-zinc-500">
+                  <td colSpan={9} className="py-8 text-center text-zinc-500">
                     Žádní uživatelé neodpovídají zadaným kritériím.
                   </td>
                 </tr>
@@ -412,6 +520,9 @@ export default function SpravaUzivateluPage() {
                       </td>
                       <td className="py-2 px-3 font-medium text-zinc-900">
                         {user.last_name} {user.first_name}
+                      </td>
+                      <td className="py-2 px-3 text-zinc-600 font-mono">
+                        {user.username || '-'}
                       </td>
                       <td className="py-2 px-3 text-zinc-600">
                         {user.email || '-'}
@@ -528,50 +639,83 @@ export default function SpravaUzivateluPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1">E-mail</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3 py-1.5 text-xs bg-zinc-50 border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-900"
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 mb-1">Ročník narození</label>
+                  <label className="block text-xs font-medium text-zinc-700 mb-1">Ročník narození *</label>
                   <input
                     type="number"
+                    required
                     value={formData.birth_year}
                     onChange={(e) => setFormData({ ...formData, birth_year: e.target.value })}
                     className="w-full px-3 py-1.5 text-xs bg-zinc-50 border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-900"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-zinc-700 mb-1">Tým</label>
-                  <select
-                    value={formData.team_id}
-                    onChange={(e) => setFormData({ ...formData, team_id: e.target.value })}
+                  <label className="block text-xs font-medium text-zinc-700 mb-1">ČSPS ID</label>
+                  <input
+                    type="number"
+                    value={formData.csps_id}
+                    onChange={(e) => setFormData({ ...formData, csps_id: e.target.value })}
                     className="w-full px-3 py-1.5 text-xs bg-zinc-50 border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-900"
-                  >
-                    <option value="">Bez týmu</option>
-                    {teams.map((team) => (
-                      <option key={team.id} value={team.id}>{team.name}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-zinc-700 mb-1">Role (oddělené čárkou)</label>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">Tým</label>
+                <select
+                  value={formData.team_id}
+                  onChange={(e) => setFormData({ ...formData, team_id: e.target.value })}
+                  className="w-full px-3 py-1.5 text-xs bg-zinc-50 border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-900"
+                >
+                  <option value="">Bez týmu</option>
+                  {teams.map((team) => (
+                    <option key={team.id} value={team.id}>{team.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Automaticky generované pole: Username (read-only) */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">Username (generuje se automaticky)</label>
                 <input
                   type="text"
-                  value={formData.roles}
-                  onChange={(e) => setFormData({ ...formData, roles: e.target.value })}
-                  placeholder="např. swimmer, trener, admin"
-                  className="w-full px-3 py-1.5 text-xs bg-zinc-50 border border-zinc-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 text-zinc-900"
+                  readOnly
+                  disabled
+                  value={calculatedUsername}
+                  placeholder="prijmeni.jmeno.rocnik"
+                  className="w-full px-3 py-1.5 text-xs bg-zinc-100 border border-zinc-300 rounded-md text-zinc-500 font-mono cursor-not-allowed"
                 />
+              </div>
+
+              {/* Automaticky generované pole: Email (read-only) */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">E-mail (generuje se automaticky)</label>
+                <input
+                  type="text"
+                  readOnly
+                  disabled
+                  value={calculatedEmail}
+                  placeholder="prijmeni.jmeno.rocnik@internal.pkznojmo.cz"
+                  className="w-full px-3 py-1.5 text-xs bg-zinc-100 border border-zinc-300 rounded-md text-zinc-500 font-mono cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 mb-1">Role uživatele</label>
+                <div className="grid grid-cols-3 gap-2 bg-zinc-50 p-2.5 rounded-md border border-zinc-200">
+                  {availableRolesList.map((r) => (
+                    <label key={r.id} className="flex items-center gap-1.5 text-xs text-zinc-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.roles.includes(r.id)}
+                        onChange={() => handleRoleCheckboxChange(r.id)}
+                        className="rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {r.label}
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div className="flex items-center gap-2 pt-1">
@@ -586,6 +730,12 @@ export default function SpravaUzivateluPage() {
                   Aktivní člen klubu
                 </label>
               </div>
+
+              {modalMode === 'create' && (
+                <p className="text-[11px] text-zinc-500 bg-blue-50/50 p-2 rounded border border-blue-100">
+                  ℹ️ Výchozí heslo pro přihlášení bude nastaveno na <code className="font-semibold">Plaveme2026!</code>.
+                </p>
+              )}
 
               <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200 mt-4">
                 <button

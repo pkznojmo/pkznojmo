@@ -49,6 +49,7 @@ const ROLE_NAV_ITEMS: Record<string, Array<{ name: string; href: string; icon: a
     { name: 'Můj účet', href: '/dashboard', icon: User },
   ],
   parent: [
+    { name: 'Statistika', href: '/dashboard/statistika', icon: Trophy },
     { name: 'Závody', href: '/dashboard/zavody', icon: Trophy },
     { name: 'Žebříčky', href: '/dashboard/zebricky', icon: BarChart2 },
     { name: 'Můj účet', href: '/dashboard', icon: User },

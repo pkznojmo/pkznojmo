@@ -187,7 +187,7 @@ export default function ZavodDetailPage() {
         let totalNrSum = 0;
         let totalDsqSum = 0;
 
-        tempAggregated.forEach(swimmer => {
+        tempAggregated.forEach((swimmer: any) => {
           swimmer.results.forEach((res: any) => {
             totalStartsSum++;
             const formattedTime = formatSwimmingTime(res.time);

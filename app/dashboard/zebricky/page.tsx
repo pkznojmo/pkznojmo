@@ -182,6 +182,7 @@ export default function ZebrickyPage() {
         points: Number(points.toFixed(2)),
         bonus: 0,
         totalScore: 0,
+        rank: 0, // <-- Tady stačí doplnit rank
       };
     });
 

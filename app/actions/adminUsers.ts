@@ -34,7 +34,7 @@ export async function inviteClubMember(prevState: any, formData: FormData) {
       .update({
         birth_year: formData.get('birth_year') ? parseInt(formData.get('birth_year') as string) : null,
         team_id: formData.get('team_id') ? parseInt(formData.get('team_id') as string) : null,
-        roles: [formData.get('role'] as string || 'swimmer'),
+        roles: formData.get('role') as string || 'swimmer',
       })
       .eq('id', data.user.id);
   }

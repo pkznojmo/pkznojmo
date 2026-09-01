@@ -269,7 +269,7 @@ export default function DruzstvoCPage() {
                       <Clock size={13} className="text-emerald-500" /> Út: 17:30 – 18:30
                     </span>
                     <span className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-lg border border-slate-200">
-                      <Clock size={13} className="text-emerald-500" /> Pá: 15:30 – 16:30
+                      <Clock size={13} className="text-emerald-500" /> Pá: 16:30 – 17:30
                     </span>
                   </div>
                 </div>
@@ -285,7 +285,7 @@ export default function DruzstvoCPage() {
                       <Clock size={13} className="text-emerald-500" /> St: 17:30 – 18:30
                     </span>
                     <span className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-lg border border-slate-200">
-                      <Clock size={13} className="text-emerald-500" /> Pá: 16:30 – 17:30
+                      <Clock size={13} className="text-emerald-500" /> Pá: 15:30 – 16:30
                     </span>
                   </div>
                 </div>

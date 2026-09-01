@@ -66,7 +66,7 @@ export default function DruzstvoKPage() {
 
                 <div className="my-6">
                   <div className="text-5xl sm:text-6xl font-black text-slate-900 tracking-tight">
-                    7.000 <span className="text-2xl font-bold text-slate-400">Kč</span>
+                    7.500 <span className="text-2xl font-bold text-slate-400">Kč</span>
                   </div>
                   <div className="text-xs font-bold uppercase tracking-widest text-blue-600 mt-2">
                     Za pololetí

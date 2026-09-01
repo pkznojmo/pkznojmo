@@ -75,10 +75,11 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white shadow-sm">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-3 sm:px-6 lg:px-8 h-20">
+      {/* Přidán gap-2 xl:gap-6, aby se sekce do sebe nezbortily */}
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-3 sm:px-6 lg:px-8 h-20 gap-2 xl:gap-6">
         
-        {/* LOGO */}
-        <Link href="/" className="flex items-center gap-3 font-bold text-xl text-blue-900 tracking-tight shrink-0">
+        {/* LOGO (shrink-0 ho ochrání před stlačením) */}
+        <Link href="/" className="flex shrink-0 items-center gap-3 font-bold text-xl text-blue-900 tracking-tight">
           <Image
             src="/logo.png"
             alt="PK Znojmo Logo"
@@ -89,28 +90,28 @@ export default function Navbar() {
           />
         </Link>
 
-        {/* DESKTOP MENU */}
-        <nav className="hidden lg:flex items-center gap-6 text-sm font-semibold text-slate-700">
+        {/* DESKTOP MENU - přidáno flex-1 justify-center a whitespace-nowrap na linky */}
+        <nav className="hidden lg:flex flex-1 items-center justify-center gap-3 xl:gap-6 text-sm font-semibold text-slate-700">
           {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="hover:text-blue-600 transition-colors py-1"
+              className="hover:text-blue-600 transition-colors py-1 whitespace-nowrap"
             >
               {link.name}
             </Link>
           ))}
         </nav>
 
-        {/* AKCE, E-SHOP, PROFIL & HAMBURGER */}
-        <div className="flex items-center gap-1.5 sm:gap-3 lg:gap-4">
+        {/* AKCE, E-SHOP, PROFIL & HAMBURGER - zabalené v shrink-0, ať se nekrčí */}
+        <div className="flex shrink-0 items-center justify-end gap-1.5 sm:gap-2 xl:gap-4">
           
           {/* EMS */}
           <Link
             href="https://www.emsznojmo.cz/"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center justify-center rounded-xl bg-[#38c5fc] px-2.5 py-1.5 text-xs font-bold text-white shadow-md shadow-[#38c5fc]/20 transition-all hover:brightness-95 active:scale-95 sm:px-3.5 sm:py-2 sm:text-sm"
+            className="shrink-0 whitespace-nowrap inline-flex items-center justify-center rounded-xl bg-[#38c5fc] px-2.5 py-1.5 text-xs font-bold text-white shadow-md shadow-[#38c5fc]/20 transition-all hover:brightness-95 active:scale-95 sm:px-3.5 sm:py-2 sm:text-sm"
           >
             EMS
           </Link>
@@ -118,44 +119,47 @@ export default function Navbar() {
           {/* REGISTRACE */}
           <Link
             href="https://klub.pkznojmo.cz/registration"
-            className="inline-flex items-center justify-center rounded-xl bg-orange-500 px-2.5 py-1.5 text-xs font-bold text-white shadow-md shadow-orange-500/20 transition-all hover:bg-orange-600 active:scale-95 sm:px-3.5 sm:py-2 sm:text-sm"
+            className="shrink-0 whitespace-nowrap inline-flex items-center justify-center rounded-xl bg-orange-500 px-2.5 py-1.5 text-xs font-bold text-white shadow-md shadow-orange-500/20 transition-all hover:bg-orange-600 active:scale-95 sm:px-3.5 sm:py-2 sm:text-sm"
           >
             Registrace
           </Link>
 
-          {/* E-SHOP BUTTON (Skryto na mobilech, zobrazeno v menu) */}
+          {/* E-SHOP BUTTON */}
           <Link
             href="/eshop"
-            className="hidden md:inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-bold text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-95"
+            className="shrink-0 whitespace-nowrap hidden md:inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-bold text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-95"
           >
-            <ShoppingBag className="h-4 w-4" />
+            <ShoppingBag className="h-4 w-4 shrink-0" />
             <span>E-SHOP</span>
           </Link>
 
           {/* PŘIHLÁŠENÍ / PROFIL */}
           {user ? (
-            <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 p-1 sm:p-1.5 sm:pl-3 rounded-xl">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2 bg-slate-100 p-1 sm:p-1.5 sm:pl-3 rounded-xl border border-slate-200/60 shadow-sm">
               <Link 
                 href="/dashboard" 
                 className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-blue-600 transition-colors p-1 sm:p-0"
               >
-                <User className="h-4 w-4 text-blue-600" />
-                <span className="hidden sm:inline max-w-[140px] truncate">{displayName}</span>
+                <User className="h-4 w-4 text-blue-600 shrink-0" />
+                {/* Dynamické truncate přes různé breakpointy */}
+                <span className="hidden sm:inline max-w-[80px] lg:max-w-[100px] xl:max-w-[140px] truncate">
+                  {displayName}
+                </span>
               </Link>
               <button
                 onClick={handleSignOut}
                 title="Odhlásit se"
-                className="p-1 sm:p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-slate-200 transition-colors"
+                className="flex shrink-0 items-center justify-center p-1 sm:p-1.5 rounded-lg text-slate-500 hover:text-red-600 hover:bg-slate-200 transition-colors"
               >
-                <LogOut className="h-4 w-4" />
+                <LogOut className="h-4 w-4 shrink-0" />
               </button>
             </div>
           ) : (
             <Link
               href="/prihlaseni"
-              className="inline-flex items-center gap-1 sm:gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 sm:px-3.5 sm:py-2 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-100 hover:text-blue-600 active:scale-95"
+              className="shrink-0 whitespace-nowrap inline-flex items-center gap-1 sm:gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 sm:px-3.5 sm:py-2 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-100 hover:text-blue-600 active:scale-95"
             >
-              <User className="h-4 w-4" />
+              <User className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">Přihlásit</span>
             </Link>
           )}
@@ -163,10 +167,10 @@ export default function Navbar() {
           {/* MOBILNÍ HAMBURGER */}
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="inline-flex items-center justify-center rounded-lg p-1 sm:p-2 text-slate-700 hover:bg-slate-100 lg:hidden focus:outline-none"
+            className="shrink-0 inline-flex items-center justify-center rounded-lg p-1 sm:p-2 text-slate-700 hover:bg-slate-100 lg:hidden focus:outline-none"
             aria-label="Otevřít menu"
           >
-            {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {isOpen ? <X className="h-6 w-6 shrink-0" /> : <Menu className="h-6 w-6 shrink-0" />}
           </button>
         </div>
       </div>
@@ -175,8 +179,6 @@ export default function Navbar() {
       {isOpen && (
         <div className="border-t border-slate-100 bg-white lg:hidden">
           <div className="space-y-1 px-4 pt-4 pb-6">
-            
-            {/* E-SHOP v mobilním menu (protože je na mobilu v liště skrytý pro úsporu místa) */}
             <Link
               href="/eshop"
               onClick={() => setIsOpen(false)}

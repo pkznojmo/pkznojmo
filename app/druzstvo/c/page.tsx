@@ -92,7 +92,7 @@ export default function DruzstvoCPage() {
                   href="#zapis" 
                   className="mt-8 w-full block py-4 bg-slate-900 hover:bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest transition-colors shadow-lg shadow-slate-900/10"
                 >
-                  Přihlásit se do Céčka
+                  Přihlásit se do Céček
                 </a>
               </div>
             </div>

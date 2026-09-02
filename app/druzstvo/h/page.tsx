@@ -291,7 +291,7 @@ export default function DruzstvoHPage() {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-end">
               <Link 
-                href="/prihlaska" 
+                href="https://klub.pkznojmo.cz/registration" 
                 className="px-8 py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest transition-all shadow-lg shadow-blue-600/20 text-center flex items-center justify-center gap-3 group"
               >
                 <span>Registrace do kurzu</span>

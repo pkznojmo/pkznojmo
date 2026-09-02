@@ -20,7 +20,10 @@ import {
   RefreshCw,
   Lock,
   UserMinus,
-  X
+  X,
+  IdCard,
+  Hash,
+  Save
 } from 'lucide-react';
 
 interface SwimmerChild {
@@ -30,6 +33,7 @@ interface SwimmerChild {
   birth_year: number | null;
   email: string | null;
   hasRealEmail: boolean;
+  csps_id?: string | null;
 }
 
 interface ParentInfo {
@@ -47,6 +51,12 @@ export default function ProfilePage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [isParent, setIsParent] = useState(false);
 
+  // ČSPS ID pro samotného plavce
+  const [selfCspsId, setSelfCspsId] = useState('');
+  const [cspsLoading, setCspsLoading] = useState(false);
+  const [cspsError, setCspsError] = useState<string | null>(null);
+  const [cspsSuccess, setCspsSuccess] = useState<string | null>(null);
+
   // Data načtená z databáze
   const [children, setChildren] = useState<SwimmerChild[]>([]);
   const [parents, setParents] = useState<ParentInfo[]>([]);
@@ -56,13 +66,13 @@ export default function ProfilePage() {
   const [password, setPassword] = useState('');
   const [parentFirstName, setParentFirstName] = useState('');
   const [parentLastName, setParentLastName] = useState('');
-  const [selectedSwimmerId, setSelectedSwimmerId] = useState<string | null>(null);
 
   // Stav pro modal okno spravování údajů dítěte rodičem
   const [childModalOpen, setChildModalOpen] = useState(false);
   const [selectedChild, setSelectedChild] = useState<SwimmerChild | null>(null);
   const [childEmail, setChildEmail] = useState('');
   const [childPassword, setChildPassword] = useState('');
+  const [childCspsId, setChildCspsId] = useState('');
   const [childFormLoading, setChildFormLoading] = useState(false);
   const [childFormError, setChildFormError] = useState<string | null>(null);
   const [childFormSuccess, setChildFormSuccess] = useState<string | null>(null);
@@ -94,15 +104,16 @@ export default function ProfilePage() {
 
   // Načtení profilu a vazeb
   const loadUserData = useCallback(async (authUser: SupabaseUser) => {
-    // 1. Načtení pole 'roles' z tabulky public.profiles
+    // 1. Načtení pole 'roles' a 'csps_id' z tabulky public.profiles
     const { data: profileData } = await supabase
       .from('profiles')
-      .select('roles')
+      .select('roles, csps_id')
       .eq('id', authUser.id)
       .single();
 
     const userRoles: string[] = profileData?.roles || ['swimmer'];
     setRoles(userRoles);
+    setSelfCspsId(profileData?.csps_id || '');
 
     // Test, zda uživatel vystupuje jako rodič
     const isParentRole = userRoles.includes('parent') || authUser.user_metadata?.is_parent || false;
@@ -120,7 +131,8 @@ export default function ProfilePage() {
             last_name,
             email,
             username,
-            birth_year
+            birth_year,
+            csps_id
           )
         `)
         .eq('parent_id', authUser.id);
@@ -129,7 +141,18 @@ export default function ProfilePage() {
         console.error('Chyba načítání dětí:', error.message || error);
       }
 
-      if (linkData) {
+      if (linkData && linkData.length > 0) {
+        const swimmerIds = linkData.map((item: any) => item.swimmer_id).filter(Boolean);
+
+        // Načteme csps_id z profiles pro zobrazení
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, csps_id')
+          .in('id', swimmerIds);
+
+        const cspsMap = new Map<string, string | null>();
+        profilesData?.forEach((p: any) => cspsMap.set(p.id, p.csps_id));
+
         const fetchedChildren = linkData
           .map((item: any) => item.swimmers)
           .filter(Boolean)
@@ -139,20 +162,23 @@ export default function ProfilePage() {
               ...swimmer,
               full_name: `${swimmer.first_name || ''} ${swimmer.last_name || ''}`.trim(),
               hasRealEmail: hasReal,
-              email: hasReal ? swimmer.email : null
+              email: hasReal ? swimmer.email : null,
+              csps_id: cspsMap.get(swimmer.id) || swimmer.csps_id || null
             };
           }) as SwimmerChild[];
 
         setChildren(fetchedChildren);
+      } else {
+        setChildren([]);
       }
     }
 
-    // Předvyplnění vlastního e-mailu (pokud není reálný, necháme prázdné nebo upravitelné)
+    // Předvyplnění vlastního e-mailu
     if (authUser.email && isRealEmail(authUser.email)) {
       setSelfEmail(authUser.email);
     }
 
-    // Načtení rodičů (pokud je plavec)
+    // Načtení rodičů (pokud je přihlášen plavec)
     const { data: linkData, error } = await supabase
       .from('parent_swimmers')
       .select(`
@@ -209,6 +235,39 @@ export default function ProfilePage() {
     await supabase.auth.signOut();
     router.push('/');
     router.refresh();
+  };
+
+  // Uložení ČSPS ID plavce
+  const handleSelfCspsUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    setCspsLoading(true);
+    setCspsError(null);
+    setCspsSuccess(null);
+
+    try {
+      const res = await fetch('/api/family', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_csps_id',
+          currentUserId: user.id,
+          targetSwimmerId: user.id,
+          cspsId: selfCspsId,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Uložení ČSPS ID selhalo.');
+
+      setCspsSuccess(data.message || 'ČSPS ID bylo úspěšně uloženo.');
+      await loadUserData(user);
+    } catch (err: any) {
+      setCspsError(err.message || 'Chyba při ukládání ČSPS ID.');
+    } finally {
+      setCspsLoading(false);
+    }
   };
 
   // KROK 1: Kontrola existence e-mailu na backendu (pro rodiče)
@@ -305,8 +364,8 @@ export default function ProfilePage() {
     }
   };
 
-  // AKCE: Rodič nastavit/mění e-mail a heslo dítěte v modalu
-  const handleSwimmerCredentialsSubmit = async (e: React.FormEvent) => {
+  // AKCE: Rodič upravuje údaje dítěte (přihlašovací údaje i ČSPS ID) v modalu
+  const handleChildModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedChild || !user) return;
 
@@ -315,26 +374,44 @@ export default function ProfilePage() {
     setChildFormSuccess(null);
 
     try {
-      const res = await fetch('/api/family', {
+      // 1. Změna / vytvoření přihlašovacích údajů, pokud byly zadány
+      if (childEmail && childPassword) {
+        const resCreds = await fetch('/api/family', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'create_swimmer_credentials',
+            currentUserId: user.id,
+            targetSwimmerId: selectedChild.id,
+            email: childEmail,
+            password: childPassword,
+          }),
+        });
+
+        const dataCreds = await resCreds.json();
+        if (!resCreds.ok) throw new Error(dataCreds.error || 'Nastavení přihlašovacích údajů dítěte selhalo.');
+      }
+
+      // 2. Aktualizace CSPS_ID
+      const resCsps = await fetch('/api/family', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'create_swimmer_credentials',
+          action: 'update_csps_id',
           currentUserId: user.id,
           targetSwimmerId: selectedChild.id,
-          email: childEmail,
-          password: childPassword,
+          cspsId: childCspsId,
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Nastavení přihlašovacích údajů dítěte selhalo.');
+      const dataCsps = await resCsps.json();
+      if (!resCsps.ok) throw new Error(dataCsps.error || 'Aktualizace ČSPS ID selhalo.');
 
-      setChildFormSuccess(data.message || 'Přihlašovací údaje byly úspěšně uloženy.');
+      setChildFormSuccess('Údaje dítěte byly úspěšně uloženy.');
       setTimeout(() => {
         setChildModalOpen(false);
         setChildFormSuccess(null);
-      }, 1500);
+      }, 1200);
 
       await loadUserData(user);
     } catch (err: any) {
@@ -494,10 +571,56 @@ export default function ProfilePage() {
           </button>
         </div>
 
-        {/* ========================================================= */}
-        {/* POVINNÁ / UNIVERZÁLNÍ KARTA: ZMĚNA INTERNÍHO E-MAILU NA REÁLNÝ */}
-        {/* Zobrazuje se VŽDY, KDYKOLIV je aktuální e-mail typu @internal.pkznojmo.cz */}
-        {/* ========================================================= */}
+        {/* KARTA PRO ZADÁNÍ / ÚPRAVU ČSPS_ID (Registrační číslo) */}
+        <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200/80 space-y-4">
+          <div className="border-b border-slate-100 pb-3">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <IdCard className="h-5 w-5 text-blue-600" />
+              <span>ČSPS ID (Český svaz plaveckých sportů)</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Vaše registrační číslo u ČSPS používané pro oficiální závodní evidenci.
+            </p>
+          </div>
+
+          {cspsSuccess && (
+            <div className="p-3 bg-green-100 border border-green-300 text-green-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+              <span>{cspsSuccess}</span>
+            </div>
+          )}
+
+          {cspsError && (
+            <div className="p-3 bg-red-100 border border-red-300 text-red-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+              <span>{cspsError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSelfCspsUpdate} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="relative flex-1">
+              <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+              <input
+                type="text"
+                value={selfCspsId}
+                onChange={(e) => setSelfCspsId(e.target.value)}
+                placeholder="např. 12345"
+                className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={cspsLoading}
+              className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-5 py-2.5 rounded-xl text-xs transition-all shadow-md shadow-blue-600/20 disabled:opacity-70 shrink-0"
+            >
+              {cspsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              <span>Uložit ČSPS ID</span>
+            </button>
+          </form>
+        </div>
+
+        {/* POVINNÁ KARTA: ZMĚNA INTERNÍHO E-MAILU NA REÁLNÝ */}
         {!isRealEmail(user.email) && (
           <div className="bg-blue-50 border-2 border-blue-300 rounded-2xl p-6 sm:p-8 shadow-md space-y-4">
             <div className="border-b border-blue-200 pb-3">
@@ -601,7 +724,15 @@ export default function ProfilePage() {
                   {children.map((child) => (
                     <div key={child.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="space-y-1">
-                        <span className="font-bold text-slate-900 text-base">{child.full_name}</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-slate-900 text-base">{child.full_name}</span>
+                          {child.csps_id && (
+                            <span className="px-2 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                              ČSPS: {child.csps_id}
+                            </span>
+                          )}
+                        </div>
+
                         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-medium">
                           {child.hasRealEmail ? (
                             <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
@@ -621,6 +752,7 @@ export default function ProfilePage() {
                             setSelectedChild(child);
                             setChildEmail(child.email || '');
                             setChildPassword('');
+                            setChildCspsId(child.csps_id || '');
                             setChildFormError(null);
                             setChildFormSuccess(null);
                             setChildModalOpen(true);
@@ -628,7 +760,7 @@ export default function ProfilePage() {
                           className="px-3.5 py-2 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold transition-all flex items-center justify-center gap-1.5 shrink-0"
                         >
                           <KeyRound className="h-4 w-4 text-amber-600" />
-                          <span>{child.hasRealEmail ? 'Změnit přístup' : 'Zřídit e-mail a heslo'}</span>
+                          <span>Správa dítěte / ČSPS ID</span>
                         </button>
 
                         <button
@@ -652,14 +784,14 @@ export default function ProfilePage() {
           </div>
         )}
 
-        {/* MODAL PRO SPRAVOVÁNÍ ÚDAJŮ DÍTĚTE RODIČEM */}
+        {/* MODAL PRO SPRAVOVÁNÍ ÚDAJŮ A ČSPS_ID DÍTĚTE RODIČEM */}
         {childModalOpen && selectedChild && (
           <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4 animate-fadeIn">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
                   <KeyRound className="h-5 w-5 text-amber-600" />
-                  <span>Přístup pro: {selectedChild.full_name}</span>
+                  <span>Správa: {selectedChild.full_name}</span>
                 </h3>
                 <button 
                   onClick={() => setChildModalOpen(false)}
@@ -683,7 +815,27 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              <form onSubmit={handleSwimmerCredentialsSubmit} className="space-y-4">
+              <form onSubmit={handleChildModalSubmit} className="space-y-4">
+                {/* ČSPS ID FLAVCE */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    ČSPS ID dítěte (registrační číslo)
+                  </label>
+                  <div className="relative">
+                    <Hash className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={childCspsId}
+                      onChange={(e) => setChildCspsId(e.target.value)}
+                      placeholder="např. 12345"
+                      className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <hr className="border-slate-100" />
+
+                {/* E-MAIL A HESLO DÍTĚTE */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                     E-mail dítěte
@@ -692,7 +844,6 @@ export default function ProfilePage() {
                     <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                     <input
                       type="email"
-                      required
                       value={childEmail}
                       onChange={(e) => setChildEmail(e.target.value)}
                       placeholder="např. dite@seznam.cz"
@@ -703,13 +854,12 @@ export default function ProfilePage() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Nové heslo pro dítě
+                    Nové heslo pro dítě {child.hasRealEmail && '(ponechte prázdné pokud nechcete měnit)'}
                   </label>
                   <div className="relative">
                     <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                     <input
                       type="password"
-                      required
                       value={childPassword}
                       onChange={(e) => setChildPassword(e.target.value)}
                       placeholder="Heslo (min. 6 znaků)"
@@ -728,10 +878,10 @@ export default function ProfilePage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={childFormLoading || !childEmail || !childPassword}
+                    disabled={childFormLoading}
                     className="inline-flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 text-white font-bold px-5 py-2 rounded-xl text-xs transition-all disabled:opacity-70"
                   >
-                    {childFormLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Uložit údaje'}
+                    {childFormLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Uložit změny'}
                   </button>
                 </div>
               </form>
@@ -745,7 +895,7 @@ export default function ProfilePage() {
         {!isParent && (
           <div className="space-y-6">
 
-            {/* KARTA 2: SEZNAM PŘIPOJENÝCH RODIČŮ */}
+            {/* SEZNAM PŘIPOJENÝCH RODIČŮ */}
             <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-200/80 space-y-4">
               <h2 className="text-lg font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
                 <Users className="h-5 w-5 text-blue-600" />
@@ -777,7 +927,7 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {/* KARTA 3: FORMULÁŘ PRO PŘIPOJENÍ/REGISTRACI RODIČE */}
+            {/* FORMULÁŘ PRO PŘIPOJENÍ/REGISTRACI RODIČE */}
             <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-6 shadow-md space-y-4">
               <div>
                 <h3 className="text-lg font-bold text-amber-900">

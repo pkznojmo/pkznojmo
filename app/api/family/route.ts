@@ -26,7 +26,9 @@ export async function POST(req: Request) {
       firstName, 
       lastName, 
       targetSwimmerId, 
-      targetParentEmail 
+      targetParentEmail,
+      cspsId,
+      csps_id
     } = body;
 
     if (!currentUserId) {
@@ -54,7 +56,7 @@ export async function POST(req: Request) {
       );
       if (updateAuthErr) throw updateAuthErr;
 
-      // 2. Synchronizace do tabulek profiles i swimmers
+      // 2. Synchronizace do tabulek profiles i swimmers (pouze e-mail, zachováváme jména!)
       await supabaseAdmin.from('profiles').update({ email: cleanEmail }).eq('id', targetSwimmerId);
       await supabaseAdmin.from('swimmers').update({ email: cleanEmail }).eq('id', targetSwimmerId);
 
@@ -74,18 +76,26 @@ export async function POST(req: Request) {
 
       const cleanEmail = email.trim().toLowerCase();
 
-      // 1. Zajištění existence profilu pro plavce
-      const { data: swimmerAuth } = await supabaseAdmin.auth.admin.getUserById(currentUserId);
-      const swimmerMeta = swimmerAuth?.user?.user_metadata || {};
+      // 1. Zajištění existence profilu pro plavce BEZ přepisování existujícího jména
+      const { data: existingSwimmerProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('id', currentUserId)
+        .maybeSingle();
 
-      const swimmerFirstName = swimmerMeta.first_name || swimmerMeta.full_name?.split(' ')[0] || 'Plavec';
-      const swimmerLastName = swimmerMeta.last_name || swimmerMeta.full_name?.split(' ').slice(1).join(' ') || 'Neznámé';
+      if (!existingSwimmerProfile) {
+        const { data: swimmerAuth } = await supabaseAdmin.auth.admin.getUserById(currentUserId);
+        const swimmerMeta = swimmerAuth?.user?.user_metadata || {};
 
-      await supabaseAdmin.from('profiles').upsert([{ 
-        id: currentUserId,
-        first_name: swimmerFirstName,
-        last_name: swimmerLastName
-      }], { onConflict: 'id' });
+        const swimmerFirstName = swimmerMeta.first_name || swimmerMeta.full_name?.split(' ')[0] || '';
+        const swimmerLastName = swimmerMeta.last_name || swimmerMeta.full_name?.split(' ').slice(1).join(' ') || '';
+
+        await supabaseAdmin.from('profiles').insert([{ 
+          id: currentUserId,
+          first_name: swimmerFirstName,
+          last_name: swimmerLastName
+        }]);
+      }
 
       // 2. Příprava jména pro nového rodiče
       const pFirstName = firstName?.trim() || 'Rodič';
@@ -101,6 +111,7 @@ export async function POST(req: Request) {
         email_confirm: true,
         user_metadata: { 
           is_parent: true,
+          roles: ['parent'],
           first_name: pFirstName,
           last_name: pLastName,
           full_name: pFullName
@@ -123,14 +134,26 @@ export async function POST(req: Request) {
         parentId = parentAuth.user.id;
       }
 
-      // 4. Vložení/aktualizace profilu rodiče do tabulky profiles
+      // 4. Nastavení role parent a profilu rodiče
+      const { data: existingParentProf } = await supabaseAdmin
+        .from('profiles')
+        .select('roles')
+        .eq('id', parentId)
+        .maybeSingle();
+
+      let parentRoles: string[] = existingParentProf?.roles || [];
+      if (!parentRoles.includes('parent')) {
+        parentRoles = [...parentRoles, 'parent'];
+      }
+
       const { error: profileDbErr } = await supabaseAdmin
         .from('profiles')
         .upsert([{ 
           id: parentId, 
           first_name: pFirstName,
           last_name: pLastName,
-          email: cleanEmail
+          email: cleanEmail,
+          roles: parentRoles
         }], { onConflict: 'id' });
 
       if (profileDbErr) throw profileDbErr;
@@ -155,7 +178,7 @@ export async function POST(req: Request) {
     }
 
     // =========================================================
-    // C) PROPOJENÍ S EXISTUJÍCÍM RODIČEM (+ OVĚŘENÍ HESLA)
+    // C) PROPOJENÍ S EXISTUJÍCÍM RODIČEM (+ OVĚŘENÍ HESLA A Nastavení Role)
     // =========================================================
     if (action === 'link_existing_parent') {
       const parentEmailToUse = (targetParentEmail || email)?.trim().toLowerCase();
@@ -185,6 +208,22 @@ export async function POST(req: Request) {
 
       const parentUserId = authData.user.id;
       const targetSwimmer = targetSwimmerId || currentUserId;
+
+      // Zajištění, že rodič má v profilu roli 'parent'
+      const { data: existingParentProf } = await supabaseAdmin
+        .from('profiles')
+        .select('roles')
+        .eq('id', parentUserId)
+        .maybeSingle();
+
+      let parentRoles: string[] = existingParentProf?.roles || [];
+      if (!parentRoles.includes('parent')) {
+        parentRoles = [...parentRoles, 'parent'];
+        await supabaseAdmin
+          .from('profiles')
+          .update({ roles: parentRoles })
+          .eq('id', parentUserId);
+      }
 
       // 2. Vytvoření vazby v DB
       const { error: linkErr } = await supabaseAdmin
@@ -284,6 +323,57 @@ export async function POST(req: Request) {
       return NextResponse.json({
         success: true,
         message: 'Váš osobní e-mail a přihlašovací údaje byly úspěšně uloženy.'
+      });
+    }
+
+    // =========================================================
+    // F) ÚPRAVA ČSPS_ID (PLAVEC PRO SEBE / RODIČ PRO SVÉ DÍTĚ)
+    // =========================================================
+    if (action === 'update_csps_id') {
+      const targetId = targetSwimmerId || currentUserId;
+      const rawCsps = cspsId !== undefined ? cspsId : csps_id;
+      const cleanCspsId = rawCsps !== undefined && rawCsps !== null && rawCsps !== '' 
+        ? rawCsps.toString().trim() 
+        : null;
+
+      // Ochrana oprávnění: buď upravuje sám sebe, nebo je prokazatelným rodičem plavce
+      if (targetId !== currentUserId) {
+        const { data: isParentLink } = await supabaseAdmin
+          .from('parent_swimmers')
+          .select('id')
+          .eq('parent_id', currentUserId)
+          .eq('swimmer_id', targetId)
+          .maybeSingle();
+
+        if (!isParentLink) {
+          return NextResponse.json(
+            { error: 'Nemáte oprávnění upravovat ČSPS ID tohoto plavce.' },
+            { status: 403 }
+          );
+        }
+      }
+
+      // 1. Aktualizace v tabulce profiles
+      const { error: profErr } = await supabaseAdmin
+        .from('profiles')
+        .update({ csps_id: cleanCspsId })
+        .eq('id', targetId);
+
+      if (profErr) throw profErr;
+
+      // 2. Synchronizace do tabulky swimmers (pokud existuje)
+      try {
+        await supabaseAdmin
+          .from('swimmers')
+          .update({ csps_id: cleanCspsId })
+          .eq('id', targetId);
+      } catch (e) {
+        // Pokud tabulka swimmers nemá sloupec csps_id, tiše ignorujeme
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Registrační číslo ČSPS ID bylo úspěšně uloženo.'
       });
     }
 

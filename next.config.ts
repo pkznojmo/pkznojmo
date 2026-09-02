@@ -21,6 +21,11 @@ const nextConfig: NextConfig = {
         permanent: false,
       },
       {
+        source: '/prihlaska',
+        destination: 'https://klub.pkznojmo.cz/registration/',
+        permanent: false,
+      },
+      {
         source: '/tabory',
         destination: 'https://klub.pkznojmo.cz/public-signups',
         permanent: false,

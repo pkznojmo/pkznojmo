@@ -69,7 +69,7 @@ export default function DruzstvoKPage() {
                     7.500 <span className="text-2xl font-bold text-slate-400">Kč</span>
                   </div>
                   <div className="text-xs font-bold uppercase tracking-widest text-blue-600 mt-2">
-                    Za pololetí
+                    Za školní rok
                   </div>
                 </div>
 
@@ -89,7 +89,7 @@ export default function DruzstvoKPage() {
                 </div>
 
                 <a 
-                  href="#zapis" 
+                  href="https://klub.pkznojmo.cz/registration" 
                   className="mt-8 w-full block py-4 bg-slate-900 hover:bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest transition-colors shadow-lg shadow-slate-900/10"
                 >
                   Registrace do Kondičky

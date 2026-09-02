@@ -55,7 +55,7 @@ export default function DruzstvoAPage() {
               </div>
 
               <Link 
-                href="/prihlaska" 
+                href="https://klub.pkznojmo.cz/registration" 
                 className="mt-8 w-full block py-4 bg-slate-900 hover:bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest transition-colors shadow-lg shadow-slate-900/10"
               >
                 Mám zájem o družstvo A

@@ -290,8 +290,8 @@ export default function IndividualniLekcePage() {
                 </div>
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">Telefon</span>
-                  <a href="tel:+420123456789" className="text-lg font-extrabold hover:text-blue-400 transition-colors">
-                    +420 123 456 789
+                  <a href="tel:+420777535302" className="text-lg font-extrabold hover:text-blue-400 transition-colors">
+                    +420 777 535 302
                   </a>
                 </div>
               </div>

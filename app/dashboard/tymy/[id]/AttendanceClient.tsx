@@ -41,7 +41,119 @@ type AttendanceRecord = {
 type ActiveTab = 'morning_km' | 'afternoon_km' | 'dry_minutes';
 type MainView = 'input' | 'overview';
 
-// Vlastní číselná klávesnice pro mobilní zařízení i desktop
+// Kalkulačková klávesnice pro zadávání hodnoty šablony
+function QuickValueInput({
+  value,
+  onSave,
+  unit,
+  label,
+}: {
+  value: number;
+  onSave: (val: number) => void;
+  unit: string;
+  label?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [tempVal, setTempVal] = useState(String(value));
+
+  useEffect(() => {
+    setTempVal(String(value));
+  }, [value]);
+
+  const handleKeyPress = (char: string) => {
+    if (char === 'del') {
+      setTempVal((prev) => (prev.length > 1 ? prev.slice(0, -1) : '0'));
+    } else if (char === ',') {
+      if (!tempVal.includes(',') && !tempVal.includes('.')) {
+        setTempVal((prev) => prev + ',');
+      }
+    } else {
+      setTempVal((prev) => (prev === '0' ? char : prev + char));
+    }
+  };
+
+  const handleSave = () => {
+    const parsed = parseFloat(tempVal.replace(',', '.')) || 0;
+    setTempVal(String(parsed));
+    if (parsed !== value) {
+      onSave(parsed);
+    }
+    setIsOpen(false);
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="px-3 py-1.5 text-center bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 hover:border-blue-400 transition-all flex items-center justify-center gap-1 min-w-[64px]"
+      >
+        <span>{value}</span>
+        <span className="text-[10px] text-slate-400 font-normal">{unit}</span>
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full sm:max-w-xs rounded-t-3xl sm:rounded-2xl p-5 shadow-2xl border border-slate-200 space-y-4 animate-in slide-in-from-bottom duration-300">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                {label || 'Nastavit šablonu'} ({unit})
+              </span>
+              <button 
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm px-2 py-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-center">
+              <span className="text-2xl font-extrabold text-slate-900">{tempVal || '0'}</span>
+              <span className="text-xs font-bold text-slate-400 ml-1.5">{unit}</span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', 'del'].map((btn) => (
+                <button
+                  key={btn}
+                  type="button"
+                  onClick={() => handleKeyPress(btn)}
+                  className="py-3.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 font-bold text-base rounded-xl transition-all shadow-2xs flex items-center justify-center"
+                >
+                  {btn === 'del' ? '⌫' : btn}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTempVal('0');
+                  onSave(0);
+                  setIsOpen(false);
+                }}
+                className="py-3 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs rounded-xl transition-all"
+              >
+                Nula (0)
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition-all shadow-md"
+              >
+                Uložit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// Vlastní číselná klávesnice pro mobilní zařízení i desktop v buňkách
 function CellInput({
   swimmerId,
   field,
@@ -538,18 +650,17 @@ export default function AttendanceClient({
             </div>
 
             <div className="flex items-center gap-2">
-              <input
-                type="number"
-                step={tabConfig[activeTab].step}
-                min="0"
+              <QuickValueInput
                 value={quickValues[activeTab]}
-                onChange={(e) => setQuickValues({
-                  ...quickValues,
-                  [activeTab]: parseFloat(e.target.value) || 0
-                })}
-                className="w-16 text-center bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 py-1.5"
+                unit={tabConfig[activeTab].unit}
+                label={`Šablona: ${tabConfig[activeTab].label}`}
+                onSave={(val) =>
+                  setQuickValues((prev) => ({
+                    ...prev,
+                    [activeTab]: val,
+                  }))
+                }
               />
-              <span className="text-xs font-bold text-slate-400">{tabConfig[activeTab].unit}</span>
             </div>
           </div>
 

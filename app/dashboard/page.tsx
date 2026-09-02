@@ -854,7 +854,7 @@ export default function ProfilePage() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Nové heslo pro dítě {child.hasRealEmail && '(ponechte prázdné pokud nechcete měnit)'}
+                    Nové heslo pro dítě {selectedChild.hasRealEmail && '(ponechte prázdné pokud nechcete měnit)'}
                   </label>
                   <div className="relative">
                     <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />

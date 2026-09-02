@@ -731,7 +731,7 @@ export default function HomePage() {
                           )}
 
                           {trainer.short_desc && (
-                            <p className="text-slate-600 text-xs leading-relaxed line-clamp-2 mt-2">
+                            <p className="text-slate-600 text-xs leading-relaxed mt-2">
                               {trainer.short_desc}
                             </p>
                           )}
@@ -781,7 +781,12 @@ export default function HomePage() {
                             <h4 className="font-bold text-slate-900 group-hover:text-amber-600 transition-colors text-base">
                               {trainer.name}
                             </h4>
-                            <p className="text-xs font-semibold text-amber-700">{trainer.role}</p>
+                            <p className="text-xs font-semibold text-amber-700 mb-1">{trainer.role}</p>
+                            {trainer.private_lessons && (
+                              <span className="inline-block text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                Soukromé lekce
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -793,7 +798,7 @@ export default function HomePage() {
                         )}
 
                         {trainer.short_desc && (
-                          <p className="text-slate-600 text-xs leading-relaxed">
+                          <p className="text-slate-600 text-xs leading-relaxed mt-2">
                             {trainer.short_desc}
                           </p>
                         )}
@@ -842,16 +847,23 @@ export default function HomePage() {
                             <h4 className="font-bold text-slate-900 text-sm truncate group-hover:text-sky-600 transition-colors">
                               {trainer.name}
                             </h4>
-                            <span className="inline-block text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded mt-0.5">
-                              {trainer.license || 'Licence III. třídy'}
-                            </span>
+                            <div className="flex flex-wrap gap-1 mt-0.5">
+                              <span className="inline-block text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                {trainer.license || 'Licence III. třídy'}
+                              </span>
+                              {trainer.private_lessons && (
+                                <span className="inline-block text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                  Soukromé lekce
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
 
                         {trainer.teams && renderTeamBadges(trainer.teams)}
 
                         {trainer.short_desc && (
-                          <p className="text-slate-600 text-xs mt-2 line-clamp-2">
+                          <p className="text-slate-600 text-xs mt-2">
                             {trainer.short_desc}
                           </p>
                         )}
@@ -900,7 +912,12 @@ export default function HomePage() {
                             <h4 className="font-bold text-slate-900 text-sm group-hover:text-teal-600 transition-colors">
                               {trainer.name}
                             </h4>
-                            <p className="text-xs text-teal-700 font-medium">{trainer.role}</p>
+                            <p className="text-xs text-teal-700 font-medium mb-1">{trainer.role}</p>
+                            {trainer.private_lessons && (
+                              <span className="inline-block text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                Soukromé lekce
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -992,15 +1009,16 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {selectedTrainer.bio ? (
-                  <p className="mt-4 text-sm text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
-                    {selectedTrainer.bio}
-                  </p>
-                ) : selectedTrainer.short_desc ? (
-                  <p className="mt-4 text-sm text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
+                {selectedTrainer.short_desc && (
+                  <p className="mt-4 text-sm font-semibold text-slate-800 leading-relaxed border-t border-slate-100 pt-3">
                     {selectedTrainer.short_desc}
                   </p>
-                ) : null}
+                )}
+                {selectedTrainer.bio && (
+                  <div className="mt-3 text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
+                    {selectedTrainer.bio}
+                  </div>
+                )}
 
                 {(selectedTrainer.phone || selectedTrainer.email) ? (
                   <div className="mt-5 pt-4 border-t border-slate-100 space-y-2">

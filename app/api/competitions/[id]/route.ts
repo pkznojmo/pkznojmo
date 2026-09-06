@@ -13,7 +13,46 @@ export async function GET(
   const competitionId = Number(id);
 
   try {
-    // 1. Zkusíme nejprve načíst data z vaší databáze (cache)
+    // 1. Zkusíme VŽDY stáhnout nejnovější strukturu z ČSPS API (aby nechyběly nově přidané disciplíny jako Mix)
+    const compRes = await fetch(`https://vysledky.czechswimming.cz/cz.zma.csps.portal.rest/api/public/competitions/${competitionId}`, {
+      cache: 'no-store' // Vynucení aktuálních dat
+    });
+
+    if (compRes.ok) {
+      const competition = await compRes.json();
+      const documents = competition.documents || competition.files || [];
+
+      let applications = null;
+      try {
+        const appRes = await fetch(`https://vysledky.czechswimming.cz/cz.zma.csps.portal.rest/api/public/competitions/${competitionId}/applications`, {
+          cache: 'no-store'
+        });
+        if (appRes.ok) {
+          applications = await appRes.json();
+        }
+      } catch (e) {
+        // Ignorovat, pokud přihlášky nejsou dostupné
+      }
+
+      const payload = {
+        competition,
+        documents,
+        applications
+      };
+
+      // 2. Uložíme stažená, čerstvá data do vaší databáze na pozadí pro případný fallback v budoucnu
+      await supabase
+        .from('club_competitions')
+        .upsert({
+          competition_id: competitionId,
+          competition_cache: payload,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'competition_id' });
+
+      return NextResponse.json(payload);
+    }
+
+    // 3. FALLBACK: Pokud server ČSPS neodpovídá, sáhneme do naší databáze
     const { data: cachedData } = await supabase
       .from('club_competitions')
       .select('competition_cache')
@@ -21,45 +60,10 @@ export async function GET(
       .maybeSingle();
 
     if (cachedData && cachedData.competition_cache) {
-      // Data už v databázi jsou, vrátíme je z cache bez volání externího API
       return NextResponse.json(cachedData.competition_cache);
     }
 
-    // 2. Pokud v cache nejsou, stáhneme je z externího ČSPS API
-    const compRes = await fetch(`https://vysledky.czechswimming.cz/cz.zma.csps.portal.rest/api/public/competitions/${competitionId}`);
-    if (!compRes.ok) {
-      return NextResponse.json({ error: 'Závod nebyl nalezen na ČSPS' }, { status: 404 });
-    }
-    const competition = await compRes.json();
-
-    const documents = competition.documents || competition.files || [];
-
-    let applications = null;
-    try {
-      const appRes = await fetch(`https://vysledky.czechswimming.cz/cz.zma.csps.portal.rest/api/public/competitions/${competitionId}/applications`);
-      if (appRes.ok) {
-        applications = await appRes.json();
-      }
-    } catch (e) {
-      // Ignorovat, pokud přihlášky nejsou dostupné
-    }
-
-    const payload = {
-      competition,
-      documents,
-      applications
-    };
-
-    // 3. Uložíme stažená data do vaší databáze (tabulky club_competitions) pro příští použití
-    await supabase
-      .from('club_competitions')
-      .upsert({
-        competition_id: competitionId,
-        competition_cache: payload,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'competition_id' });
-
-    return NextResponse.json(payload);
+    return NextResponse.json({ error: 'Závod nebyl nalezen na ČSPS ani v lokální databázi' }, { status: 404 });
 
   } catch (error: any) {
     console.error('Chyba při načítání detailu závodu:', error);

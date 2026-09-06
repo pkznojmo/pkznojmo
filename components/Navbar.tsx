@@ -126,7 +126,7 @@ export default function Navbar() {
 
           {/* E-SHOP BUTTON */}
           <Link
-            href="/eshop"
+            href="https://klub.pkznojmo.cz/public-store/1"
             className="shrink-0 whitespace-nowrap hidden md:inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-sm font-bold text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-95"
           >
             <ShoppingBag className="h-4 w-4 shrink-0" />

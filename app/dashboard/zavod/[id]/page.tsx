@@ -117,25 +117,27 @@ export default function ZavodDetailPage() {
         setVenueMeeting(clubData.venue_meeting || '');
         setCoachNotes(clubData.coach_notes || '');
         if (clubData.results_cache) {
-          setCompetition(clubData.results_cache.competition);
+          // Nastavíme záložní výsledky
           setResultsData(clubData.results_cache.results || {});
           setClubSwimmers(clubData.results_cache.clubSwimmers || []);
         }
       }
 
+      // 1. Získáme detail struktury z našeho upraveného API (vždy aktuální z ČSPS)
       const res = await fetch(`/api/competitions/${competitionId}`);
       if (res.ok) {
         const json = await res.json();
         if (json.competition) setCompetition(json.competition);
         setApplicationsData(json.applications);
-        
-        if (!clubData?.results_cache) {
-          const resCache = await fetch(`/api/competitions/${competitionId}/results`);
-          if (resCache.ok) {
-            const cacheJson = await resCache.json();
-            if (cacheJson.results) setResultsData(cacheJson.results);
-            if (cacheJson.clubSwimmers) setClubSwimmers(cacheJson.clubSwimmers);
-          }
+      }
+
+      // Automatické stažení / doplnění výsledků, pokud nebyly v lokální cache
+      if (!clubData?.results_cache) {
+        const resCache = await fetch(`/api/competitions/${competitionId}/results`);
+        if (resCache.ok) {
+          const cacheJson = await resCache.json();
+          if (cacheJson.results) setResultsData(cacheJson.results);
+          if (cacheJson.clubSwimmers) setClubSwimmers(cacheJson.clubSwimmers);
         }
       }
 
@@ -154,14 +156,13 @@ export default function ZavodDetailPage() {
       });
       if (res.ok) {
         const data = await res.json();
-        setCompetition(data.competition);
+        // Nepřepisujeme competition strukturou z results endpointu, ta bývá chudší
         const newResults = data.results || {};
         const newSwimmers = data.clubSwimmers || [];
 
         setResultsData(newResults);
         setClubSwimmers(newSwimmers);
 
-        // --- AGREGACE KLUBOVÝCH PLAVCŮ ---
         const tempAggregated = newSwimmers.reduce((acc: any[], curr: any) => {
           const key = `${curr.firstName?.trim()}_${curr.lastName?.trim()}_${curr.birthYear}_${curr.clubAbbrev}`;
           let existing = acc.find(s => `${s.firstName?.trim()}_${s.lastName?.trim()}_${s.birthYear}_${s.clubAbbrev}` === key);
@@ -218,62 +219,6 @@ export default function ZavodDetailPage() {
             total_swimmers: totalSwimmersSum,
             updated_at: new Date().toISOString()
           }, { onConflict: 'competition_id' });
-
-        const validCspsIds = new Set();
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('csps_id')
-          .not('csps_id', 'is', null);
-        
-        if (profilesData) {
-          profilesData.forEach(p => validCspsIds.add(p.csps_id));
-        }
-
-        const statsToUpsert = tempAggregated
-          .filter((swimmer: any) => swimmer.swimmerId && validCspsIds.has(Number(swimmer.swimmerId)))
-          .map((swimmer: any) => {
-            let starts = 0;
-            let orCount = 0;
-            let nrCount = 0;
-            let dsqCount = 0;
-
-            swimmer.results.forEach((res: any) => {
-              starts++;
-              const formattedTime = formatSwimmingTime(res.time);
-              const isDsq = formattedTime === 'DSQ';
-              const hasSwum = res.time !== undefined && res.time !== null && res.time !== '' && res.time !== '-' && !isDsq;
-
-              if (isDsq) {
-                dsqCount++;
-              } else if (hasSwum) {
-                if (!res.personalBestTime) {
-                  nrCount++;
-                } else if (res.isPersonalBest) {
-                  orCount++;
-                }
-              }
-            });
-
-            return {
-              competition_id: competitionId,
-              csps_id: Number(swimmer.swimmerId),
-              first_name: swimmer.firstName,
-              last_name: swimmer.lastName,
-              birth_year: swimmer.birthYear,
-              club_abbrev: swimmer.clubAbbrev,
-              starts_count: starts,
-              or_count: orCount,
-              nr_count: nrCount,
-              dsq_count: dsqCount,
-              updated_at: new Date().toISOString()
-            };
-          });
-
-        if (statsToUpsert.length > 0) {
-          await supabase
-            .from('swimmer_competition_stats')
-            .upsert(statsToUpsert, { onConflict: 'competition_id,csps_id' });
-        }
 
       } else {
         alert('Nepodařilo se aktualizovat výsledky.');
@@ -376,13 +321,14 @@ export default function ZavodDetailPage() {
     return formatted;
   };
 
-  const openApplicationsModal = (catTitle: string, catId: number, gender?: string) => {
+  const openApplicationsModal = (catTitle: string, catId: number | string, gender?: string) => {
     let foundApps: any[] = [];
     if (applicationsData && applicationsData.halfDays) {
       for (const hd of applicationsData.halfDays) {
         for (const cat of hd.competitionCategories || hd.categoryDtos || []) {
-          const matchId = cat.id === catId || cat.competitionCategoryId === catId;
-          const matchGender = gender ? cat.gender === gender : true;
+          const matchId = String(cat.id || cat.competitionCategoryId) === String(catId);
+          // U mixů často gender chybí, proto pokud není specifikován v argumentu, neověřujeme
+          const matchGender = gender && gender !== 'MIX' ? cat.gender === gender : true;
           if (matchId && matchGender) {
             foundApps = cat.applications || [];
             break;
@@ -392,21 +338,24 @@ export default function ZavodDetailPage() {
       }
     }
     setModalContent({
-      title: `Přihlášky: ${catTitle} ${gender ? `(${gender === 'MALE' ? 'Muži' : 'Ženy'})` : ''}`,
+      title: `Přihlášky: ${catTitle} ${gender ? `(${gender === 'MALE' ? 'Muži' : gender === 'FEMALE' ? 'Ženy' : 'Mix'})` : ''}`,
       type: 'applications',
       items: foundApps
     });
   };
 
-  const openStartListModal = (catTitle: string, catId: number, gender?: string) => {
+  const openStartListModal = (catTitle: string, catId: number | string, gender?: string) => {
     let foundItems: any[] = [];
-    if (resultsData[catId]?.startList || resultsData[catId]?.singleOutputs) {
-      foundItems = resultsData[catId]?.startList || resultsData[catId]?.singleOutputs;
+    const catData = resultsData[catId] || resultsData[String(catId)];
+    if (catData?.startList?.length > 0) {
+      foundItems = catData.startList;
+    } else if (catData?.singleOutputs?.length > 0) {
+      foundItems = catData.singleOutputs;
     } else if (applicationsData && applicationsData.halfDays) {
       for (const hd of applicationsData.halfDays) {
         for (const cat of hd.competitionCategories || hd.categoryDtos || []) {
-          const matchId = cat.id === catId || cat.competitionCategoryId === catId;
-          const matchGender = gender ? cat.gender === gender : true;
+          const matchId = String(cat.id || cat.competitionCategoryId) === String(catId);
+          const matchGender = gender && gender !== 'MIX' ? cat.gender === gender : true;
           if (matchId && matchGender) {
             foundItems = cat.applications || [];
             break;
@@ -416,16 +365,17 @@ export default function ZavodDetailPage() {
       }
     }
     setModalContent({
-      title: `Startovní listina: ${catTitle} ${gender ? `(${gender === 'MALE' ? 'Muži' : 'Ženy'})` : ''}`,
+      title: `Startovní listina: ${catTitle} ${gender ? `(${gender === 'MALE' ? 'Muži' : gender === 'FEMALE' ? 'Ženy' : 'Mix'})` : ''}`,
       type: 'startlist',
       items: foundItems
     });
   };
 
-  const openResultsModal = (catTitle: string, catId: number, gender?: string) => {
-    const outputs = resultsData[catId]?.singleOutputs || [];
+  const openResultsModal = (catTitle: string, catId: number | string, gender?: string) => {
+    const catData = resultsData[catId] || resultsData[String(catId)];
+    const outputs = catData?.singleOutputs || [];
     setModalContent({
-      title: `Výsledky: ${catTitle} ${gender ? `(${gender === 'MALE' ? 'Muži' : 'Ženy'})` : ''}`,
+      title: `Výsledky: ${catTitle} ${gender ? `(${gender === 'MALE' ? 'Muži' : gender === 'FEMALE' ? 'Ženy' : 'Mix'})` : ''}`,
       type: 'results',
       items: outputs
     });
@@ -439,11 +389,11 @@ export default function ZavodDetailPage() {
     return `${sign}${diffSecs.toFixed(2)} s`;
   };
 
-  // Robustní pomocná funkce pro porovnání ČSPS ID plavce napříč strukturami
   const isUserSwimmer = (item: any) => {
     if (!userCspsId || !item) return false;
     const sId = Number(
       item.swimmerId || 
+      item.userId ||
       item.competitorId || 
       item.cspsId || 
       item.swimmer?.id || 
@@ -454,120 +404,111 @@ export default function ZavodDetailPage() {
     return sId === userCspsId;
   };
 
-  // Agregace startů pro přihlášeného plavce (podle userCspsId)
+  // VYLEPŠENÁ LOGIKA: Sestavení startů plavce z přihlášek i výsledků
   const myEntries = (() => {
     if (!userCspsId) return [];
     const entriesMap = new Map<string, any>();
 
-    // 1. Prozkoumání klubových plavců (pokud jsou načteni)
+    // 1. Získáme přihlášky - Základ pro "Zatím neplaváno / Čeká se na startovku"
+    if (applicationsData && applicationsData.halfDays) {
+      applicationsData.halfDays.forEach((hd: any) => {
+        const categories = hd.competitionCategories || hd.categoryDtos || [];
+        categories.forEach((cat: any) => {
+          const apps = cat.applications || [];
+          apps.forEach((app: any) => {
+            if (isUserSwimmer(app)) {
+              const catId = String(cat.id || cat.competitionCategoryId);
+              const catTitle = cat.title || cat.disciplineTitle || `Disciplína ${catId}`;
+              
+              entriesMap.set(catId, {
+                catId,
+                disciplineTitle: catTitle,
+                heat: '-',
+                lane: '-',
+                entryTime: app.entryTime ?? app.qualificationTime,
+                time: undefined, // undefined znamená, že se čeká na výsledek
+                order: null,
+                points: null,
+                isPersonalBest: false,
+                personalBestTime: null,
+                source: 'Přihláška'
+              });
+            }
+          });
+        });
+      });
+    }
+
+    // 2. Přepíšeme daty z klubu, pokud tam figuruje (z `clubSwimmers` cache s osobáky)
     if (Array.isArray(clubSwimmers)) {
       clubSwimmers.forEach((swimmer: any) => {
         if (isUserSwimmer(swimmer)) {
           const results = Array.isArray(swimmer.results) ? swimmer.results : [swimmer];
           results.forEach((res: any) => {
-            const key = `${res.disciplineTitle || res.catId || 'disc'}`;
-            if (!entriesMap.has(key)) {
-              entriesMap.set(key, {
-                catId: res.catId || '',
-                disciplineTitle: res.disciplineTitle || 'Disciplína',
-                heat: res.heat || res.group || '-',
-                lane: res.lane || res.line || '-',
-                entryTime: res.entryTime ?? res.qualificationTime,
-                time: res.time,
-                order: res.order,
-                points: res.points,
-                isPersonalBest: res.isPersonalBest,
-                personalBestTime: res.personalBestTime,
-              });
-            }
+            const catId = String(res.catId || '');
+            const existing = entriesMap.get(catId) || {};
+            
+            entriesMap.set(catId, {
+              ...existing,
+              catId: catId || existing.catId,
+              disciplineTitle: res.disciplineTitle || existing.disciplineTitle || 'Disciplína',
+              heat: res.heat || res.group || existing.heat || '-',
+              lane: res.lane || res.line || existing.lane || '-',
+              entryTime: res.entryTime ?? res.qualificationTime ?? existing.entryTime,
+              time: res.time !== undefined ? res.time : existing.time,
+              order: res.order || existing.order,
+              points: res.points || existing.points,
+              isPersonalBest: res.isPersonalBest ?? existing.isPersonalBest,
+              personalBestTime: res.personalBestTime ?? existing.personalBestTime,
+              source: 'Výsledky'
+            });
           });
         }
       });
     }
 
-    // 2. Prozkoumání výsledků a startovních listin
+    // 3. Doplníme/aktualizujeme z hrubých dat (resultsData - Startovka a Výsledky)
     if (resultsData) {
-      Object.keys(resultsData).forEach(catId => {
-        const catData = resultsData[catId];
+      Object.keys(resultsData).forEach(catIdStr => {
+        const catData = resultsData[catIdStr];
         
+        // A) Startovní listina (doplní rozplavbu a dráhu, pokud už existuje)
         const startList = catData?.startList || [];
         startList.forEach((item: any) => {
           if (isUserSwimmer(item)) {
-            const key = `${catId}_${item.disciplineTitle || catId}`;
-            if (!entriesMap.has(key)) {
-              entriesMap.set(key, {
-                catId,
-                disciplineTitle: item.disciplineTitle || catData.disciplineTitle || `Disciplína ${catId}`,
-                heat: item.heat || item.group || '-',
-                lane: item.lane || item.line || '-',
-                entryTime: item.entryTime ?? item.qualificationTime,
-                time: item.time,
-                order: item.order,
-                points: item.points,
-                isPersonalBest: item.isPersonalBest,
-                personalBestTime: item.personalBestTime,
-              });
-            }
+            const existing = entriesMap.get(catIdStr) || {};
+            entriesMap.set(catIdStr, {
+              ...existing,
+              catId: catIdStr,
+              disciplineTitle: item.disciplineTitle || catData.disciplineTitle || existing.disciplineTitle || `Disciplína ${catIdStr}`,
+              heat: item.heat || item.group || existing.heat || '-',
+              lane: item.lane || item.line || existing.lane || '-',
+              entryTime: item.entryTime ?? item.qualificationTime ?? existing.entryTime,
+              source: existing.source === 'Výsledky' ? 'Výsledky' : 'Startovka'
+            });
           }
         });
 
+        // B) SingleOutputs (Konečné výsledky - nejvyšší priorita)
         const outputs = catData?.singleOutputs || [];
         outputs.forEach((item: any) => {
           if (isUserSwimmer(item)) {
-            const key = `${catId}_${item.disciplineTitle || catId}`;
-            if (!entriesMap.has(key)) {
-              entriesMap.set(key, {
-                catId,
-                disciplineTitle: item.disciplineTitle || catData.disciplineTitle || `Disciplína ${catId}`,
-                heat: item.heat || item.group || '-',
-                lane: item.lane || item.line || '-',
-                entryTime: item.entryTime ?? item.qualificationTime,
-                time: item.time,
-                order: item.order,
-                points: item.points,
-                isPersonalBest: item.isPersonalBest,
-                personalBestTime: item.personalBestTime,
-              });
-            } else {
-              const existing = entriesMap.get(key);
-              if (item.time !== undefined) existing.time = item.time;
-              if (item.order !== undefined) existing.order = item.order;
-              if (item.points !== undefined) existing.points = item.points;
-              if (item.isPersonalBest !== undefined) existing.isPersonalBest = item.isPersonalBest;
-              if (item.personalBestTime !== undefined) existing.personalBestTime = item.personalBestTime;
-            }
+            const existing = entriesMap.get(catIdStr) || {};
+            entriesMap.set(catIdStr, {
+              ...existing,
+              catId: catIdStr,
+              disciplineTitle: item.disciplineTitle || catData.disciplineTitle || existing.disciplineTitle || `Disciplína ${catIdStr}`,
+              heat: item.heat || item.group || existing.heat || '-',
+              lane: item.lane || item.line || existing.lane || '-',
+              entryTime: item.entryTime ?? item.qualificationTime ?? existing.entryTime,
+              time: item.time !== undefined ? item.time : existing.time,
+              order: item.order || existing.order,
+              points: item.points || existing.points,
+              isPersonalBest: item.isPersonalBest ?? existing.isPersonalBest,
+              personalBestTime: item.personalBestTime ?? existing.personalBestTime,
+              source: 'Výsledky'
+            });
           }
-        });
-      });
-    }
-
-    // 3. Prozkoumání přihlášek
-    if (applicationsData && applicationsData.halfDays) {
-      applicationsData.halfDays.forEach((hd: any) => {
-        const categories = hd.competitionCategories || hd.categoryDtos || [];
-        categories.forEach((cat: any) => {
-          const catId = cat.id || cat.competitionCategoryId;
-          const catTitle = cat.title || cat.disciplineTitle;
-          const apps = cat.applications || [];
-          apps.forEach((app: any) => {
-            if (isUserSwimmer(app)) {
-              const key = `${catId}_${catTitle}`;
-              if (!entriesMap.has(key)) {
-                entriesMap.set(key, {
-                  catId,
-                  disciplineTitle: catTitle,
-                  heat: '-',
-                  lane: '-',
-                  entryTime: app.qualificationTime ?? app.entryTime,
-                  time: null,
-                  order: null,
-                  points: null,
-                  isPersonalBest: false,
-                  personalBestTime: null,
-                });
-              }
-            }
-          });
         });
       });
     }
@@ -812,7 +753,7 @@ export default function ZavodDetailPage() {
         )}
       </div>
 
-      {/* HLAVNÍ ZÁLOŽKY: Disciplíny & Klubové výsledky & Můj závod */}
+      {/* HLAVNÍ ZÁLOŽKY */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         <div className="flex items-center border-b border-slate-200 overflow-x-auto bg-slate-50/50">
           <button
@@ -858,9 +799,12 @@ export default function ZavodDetailPage() {
                     </div>
 
                     <div className="space-y-2.5">
-                      {hd.categoryDtos?.map((cat: any, cIdx: number) => {
+                      {(hd.categoryDtos || hd.competitionCategories || []).map((cat: any, cIdx: number) => {
                         const catId = cat.id || cat.competitionCategoryId;
                         const catTitle = cat.title || cat.disciplineTitle || `Disciplína ${cIdx + 1}`;
+                        
+                        // Detekce kategorie
+                        const isMix = cat.gender === 'MIX' || (!cat.gender && catTitle.toLowerCase().includes('mix'));
 
                         return (
                           <div key={cIdx} className="bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 flex items-center justify-between gap-3 flex-wrap transition-all hover:bg-slate-100/60">
@@ -869,9 +813,11 @@ export default function ZavodDetailPage() {
                               <span className="text-xs font-black text-slate-900">
                                 {catTitle}
                               </span>
-                              <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
-                                {cat.gender === 'MALE' ? 'Muži' : cat.gender === 'FEMALE' ? 'Ženy' : ''}
-                              </span>
+                              {(cat.gender || isMix) && (
+                                <span className="text-[10px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                                  {cat.gender === 'MALE' ? 'Muži' : cat.gender === 'FEMALE' ? 'Ženy' : isMix ? 'Mix' : cat.gender}
+                                </span>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-2 flex-wrap">
@@ -1072,6 +1018,7 @@ export default function ZavodDetailPage() {
                     const formattedTime = formatSwimmingTime(entry.time);
                     const isDsq = formattedTime === 'DSQ';
                     const timeDiff = getTimeDifferenceString(entry.time, entry.personalBestTime);
+                    const statusText = entry.source === 'Přihláška' ? 'Čeká se na losování' : (!hasSwum ? 'Zatím neplaváno' : formattedTime);
 
                     return (
                       <div key={eIdx} className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3 shadow-2xs">
@@ -1080,14 +1027,16 @@ export default function ZavodDetailPage() {
                             <Medal className="w-4 h-4 text-blue-600 shrink-0" />
                             <h4 className="text-xs font-black text-slate-900">{entry.disciplineTitle}</h4>
                           </div>
-                          {entry.order && (
+                          {entry.order ? (
                             <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-lg text-[11px] font-black">
                               {entry.order}. místo
                             </span>
+                          ) : (
+                             <span className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded-lg text-[11px] font-black">
+                               {entry.source}
+                             </span>
                           )}
                         </div>
-
-                        
 
                         <div className="bg-white p-3 rounded-xl border border-slate-200/60 flex items-center justify-between text-xs">
                           <div>
@@ -1095,18 +1044,28 @@ export default function ZavodDetailPage() {
                             <span className="font-mono font-bold text-slate-700">{formatSwimmingTime(entry.entryTime)}</span>
                           </div>
                           <div className="text-right">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase block">Reálný čas / Výsledek</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                                {hasSwum ? 'Reálný čas / Výsledek' : 'Stav'}
+                            </span>
                             {isDsq ? (
                               <span className="inline-flex items-center px-2 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-[11px] font-black tracking-wider">
                                 DSQ
                               </span>
                             ) : !hasSwum ? (
-                              <span className="font-mono font-bold text-slate-400">Zatím neplaváno</span>
+                              <span className="font-mono font-bold text-slate-400">{statusText}</span>
                             ) : (
                               <span className="font-mono font-extrabold text-slate-900 text-sm">{formattedTime}</span>
                             )}
                           </div>
                         </div>
+
+                        {/* Ukazatel rozplavby a dráhy ze startovky */}
+                        {!hasSwum && entry.source === 'Startovka' && (
+                            <div className="px-3 py-1.5 bg-purple-50 border border-purple-200 rounded-xl text-[11px] font-medium text-purple-800 flex items-center justify-between">
+                                <span>Rozplavba: <strong className="font-black">{entry.heat}</strong></span>
+                                <span>Dráha: <strong className="font-black">{entry.lane}</strong></span>
+                            </div>
+                        )}
 
                         {hasSwum && !isDsq && (
                           <div className="pt-1">
@@ -1119,7 +1078,7 @@ export default function ZavodDetailPage() {
                               <div className="px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] font-extrabold text-emerald-700 flex items-center justify-between">
                                 <div className="flex items-center gap-1.5">
                                   <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span>Osobní rekord (OR)! {timeDiff}</span>
+                                  <span>Osobák (OR)! {timeDiff}</span>
                                 </div>
                                 <span className="text-[10px] text-slate-500 font-medium">Původní: {formatSwimmingTime(entry.personalBestTime)}</span>
                               </div>
@@ -1141,7 +1100,7 @@ export default function ZavodDetailPage() {
                   <div className="space-y-1">
                     <h4 className="text-xs font-bold text-slate-800">Nemáte v tomto závodě evidované žádné starty</h4>
                     <p className="text-[11px] text-slate-500 max-w-md mx-auto">
-                      Váš ČSPS ID ({userCspsId}) nebyl nalezen v přihláškách, startovních listinách ani ve výsledcích tohoto závodu. Jakmile budou data aktualizována, vaše starty se zde zobrazí.
+                      Váš ČSPS ID ({userCspsId}) nebyl nalezen v přihláškách, startovních listinách ani ve výsledcích tohoto závodu.
                     </p>
                   </div>
                 </div>
@@ -1202,7 +1161,9 @@ export default function ZavodDetailPage() {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                   {swimmersInGroup.map((item: any, idx: number) => {
-                                    const name = item.firstName && item.lastName ? `${item.firstName} ${item.lastName}` : (item.name || 'Neznámý');
+                                    const name = (item.firstName && item.lastName) 
+                                      ? `${item.firstName} ${item.lastName}` 
+                                      : (item.user || item.name || 'Neznámý');
                                     const line = item.line || item.lane || '-';
                                     const clubAbbrev = item.clubAbbrev || item.club || '';
                                     const isPkzn = isPKZnSwimmer(clubAbbrev, item.clubFullName);
@@ -1250,7 +1211,9 @@ export default function ZavodDetailPage() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {modalContent.items.map((item: any, idx: number) => {
-                          const name = item.firstName && item.lastName ? `${item.firstName} ${item.lastName}` : (item.name || 'Neznámý');
+                          const name = (item.firstName && item.lastName) 
+                            ? `${item.firstName} ${item.lastName}` 
+                            : (item.user || item.name || 'Neznámý');
                           const order = item.order || idx + 1;
                           const clubAbbrev = item.clubAbbrev || item.club || '';
                           const isPkzn = isPKZnSwimmer(clubAbbrev, item.clubFullName);

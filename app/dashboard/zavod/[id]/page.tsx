@@ -266,7 +266,10 @@ export default function ZavodDetailPage() {
   const isPKZnSwimmer = (clubAbbrev?: string, club?: string) => {
     const abbrev = (clubAbbrev || '').trim().toUpperCase();
     const fullName = (club || '').trim().toUpperCase();
-    return abbrev === 'PKZN' || abbrev === 'PKZNO' || fullName.includes('PLAVECKÝ KLUB ZNOJMO');
+    
+    return ['PKZN', 'PKZNO', 'TJZN'].includes(abbrev) || 
+           fullName.includes('PLAVECKÝ KLUB ZNOJMO') || 
+           fullName.includes('TJ ZNOJMO');
   };
 
   const formatSwimmingTime = (timeInput: any) => {

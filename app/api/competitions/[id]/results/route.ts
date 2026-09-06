@@ -49,12 +49,27 @@ async function fetchAndCacheResults(competitionId: number) {
 
         // 1. STAŽENÍ ŽIVÉ STARTOVNÍ LISTINY
         try {
+          let startListData = null;
+          // Zkusíme nejdříve novou cestu (korespondující s import-results)
           const startListRes = await fetch(
-            `https://vysledky.czechswimming.cz/cz.zma.csps.portal.rest/api/public/competitions/${competitionId}/category/${catId}/start-list`,
+            `https://vysledky.czechswimming.cz/cz.zma.csps.portal.rest/api/public/competitions/${competitionId}/start-lists/categories/${catId}`,
             { cache: 'no-store' }
           );
+          
           if (startListRes.ok) {
-            const startListData = await startListRes.json();
+            startListData = await startListRes.json();
+          } else {
+            // Fallback na starší formát cesty pro některé závody
+            const fallbackRes = await fetch(
+              `https://vysledky.czechswimming.cz/cz.zma.csps.portal.rest/api/public/competitions/${competitionId}/category/${catId}/start-list`,
+              { cache: 'no-store' }
+            );
+            if (fallbackRes.ok) {
+              startListData = await fallbackRes.json();
+            }
+          }
+
+          if (startListData) {
             resultsMap[catId].startList = Array.isArray(startListData) ? startListData : (startListData.startList || startListData.items || []);
           }
         } catch (e) {
@@ -90,10 +105,10 @@ async function fetchAndCacheResults(competitionId: number) {
 
         resultsMap[catId].singleOutputs = rawOutputs;
 
-        // Agregace výsledků pro plavce klubu PKZn
+        // Agregace výsledků pro plavce klubu PKZn a TJZn
         for (const item of rawOutputs) {
           const clubAbbrev = item.clubAbbrev || item.club || '';
-          const isPkzn = clubAbbrev.trim().toUpperCase() === 'PKZN' || clubAbbrev.trim().toUpperCase() === 'PKZNO';
+          const isPkzn = ['PKZN', 'PKZNO', 'TJZN'].includes(clubAbbrev.trim().toUpperCase());
 
           if (isPkzn) {
             const swimmerId = item.userId || item.personId || item.swimmerId || item.competitorId;

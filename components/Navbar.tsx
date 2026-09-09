@@ -180,7 +180,7 @@ export default function Navbar() {
         <div className="border-t border-slate-100 bg-white lg:hidden">
           <div className="space-y-1 px-4 pt-4 pb-6">
             <Link
-              href="/eshop"
+              href="https://klub.pkznojmo.cz/public-store/1"
               onClick={() => setIsOpen(false)}
               className="flex md:hidden items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-blue-700 mb-4"
             >

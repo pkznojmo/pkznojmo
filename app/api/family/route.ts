@@ -102,7 +102,7 @@ export async function POST(req: Request) {
       const pLastName = lastName?.trim() || cleanEmail.split('@')[0];
       const pFullName = `${pFirstName} ${pLastName}`.trim();
 
-      // 3. Vytvoření / získání Auth účtu rodiče
+      // 3. Vytvoření / získání Auth účtu rodiče (VÝHRADNĚ S ROLÍ PARENT)
       let parentId: string;
 
       const { data: parentAuth, error: parentAuthErr } = await supabaseAdmin.auth.admin.createUser({
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
         email_confirm: true,
         user_metadata: { 
           is_parent: true,
-          roles: ['parent'],
+          roles: ['parent'], // Natvrdo pouze parent
           first_name: pFirstName,
           last_name: pLastName,
           full_name: pFullName
@@ -134,18 +134,7 @@ export async function POST(req: Request) {
         parentId = parentAuth.user.id;
       }
 
-      // 4. Nastavení role parent a profilu rodiče
-      const { data: existingParentProf } = await supabaseAdmin
-        .from('profiles')
-        .select('roles')
-        .eq('id', parentId)
-        .maybeSingle();
-
-      let parentRoles: string[] = existingParentProf?.roles || [];
-      if (!parentRoles.includes('parent')) {
-        parentRoles = [...parentRoles, 'parent'];
-      }
-
+      // 4. Nastavení výhradní role ['parent'] v tabulce profiles
       const { error: profileDbErr } = await supabaseAdmin
         .from('profiles')
         .upsert([{ 
@@ -153,7 +142,7 @@ export async function POST(req: Request) {
           first_name: pFirstName,
           last_name: pLastName,
           email: cleanEmail,
-          roles: parentRoles
+          roles: ['parent'] // Vytváříme nového rodiče -> zaručíme pouze 'parent' bez 'swimmer'
         }], { onConflict: 'id' });
 
       if (profileDbErr) throw profileDbErr;

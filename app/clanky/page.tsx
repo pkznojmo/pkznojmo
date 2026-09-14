@@ -36,6 +36,48 @@ const CATEGORY_OPTIONS = [
   'Motivační soutěž'
 ];
 
+/**
+ * Pomocná funkce pro kompresi a konverzi obrázku do .webp před nahráním
+ */
+async function compressImage(file: File, maxWidth = 1200, quality = 0.8): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject('Failed to get canvas context');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) resolve(blob);
+            else reject('Compression failed');
+          },
+          'image/webp',
+          quality
+        );
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
+
 export default function ClankyPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [canManage, setCanManage] = useState<boolean>(false);
@@ -98,7 +140,7 @@ export default function ClankyPage() {
   useEffect(() => {
     const checkUserAndRole = async () => {
       try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
           setCanManage(false);
           return;
@@ -241,13 +283,18 @@ export default function ClankyPage() {
     try {
       if (!e.target.files || e.target.files.length === 0) return;
       setUploadingCover(true);
-      const file = e.target.files[0];
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+      const rawFile = e.target.files[0];
       
+      // Automatická komprese a převod do WebP
+      const compressedBlob = await compressImage(rawFile, 1200, 0.8);
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.webp`;
+
       const { error: uploadError } = await supabase.storage
         .from('article-covers')
-        .upload(fileName, file);
+        .upload(fileName, compressedBlob, {
+          contentType: 'image/webp',
+          cacheControl: '31536000'
+        });
 
       if (uploadError) throw uploadError;
 
@@ -272,12 +319,16 @@ export default function ClankyPage() {
       const newUrls: string[] = [];
 
       for (const file of files) {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        // Automatická komprese a převod do WebP
+        const compressedBlob = await compressImage(file, 1200, 0.8);
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.webp`;
 
         const { error: uploadError } = await supabase.storage
           .from('article-galleries')
-          .upload(fileName, file);
+          .upload(fileName, compressedBlob, {
+            contentType: 'image/webp',
+            cacheControl: '31536000'
+          });
 
         if (uploadError) throw uploadError;
 
@@ -416,8 +467,6 @@ export default function ClankyPage() {
           <p className="mt-5 text-base sm:text-xl text-slate-600 max-w-2xl font-normal leading-relaxed">
             Objevte nejnovější novinky ze závodů, tréninkové tipy, rozhovory a pohledy do zákulisí Plaveckého klubu Znojmo.
           </p>
-
-          
         </div>
       </section>
 
@@ -445,7 +494,7 @@ export default function ClankyPage() {
           </div>
 
           {canManage && (
-            <div className="">
+            <div>
               <button
                 onClick={() => openModal(null)}
                 className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-3.5 font-bold text-white shadow-lg shadow-blue-500/25 hover:bg-blue-700 hover:scale-105 transition-all active:scale-95 cursor-pointer"

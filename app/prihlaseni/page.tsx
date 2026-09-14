@@ -49,7 +49,7 @@ export default function LoginPage() {
 
       if (signInError) {
         if (signInError.message.includes('Invalid login credentials')) {
-          throw new Error('Nespávné uživatelské jméno nebo heslo.');
+          throw new Error('Nespávný E-mail nebo heslo.');
         }
         throw signInError;
       }
@@ -116,7 +116,7 @@ export default function LoginPage() {
                 htmlFor="login" 
                 className="block text-sm font-bold text-slate-700 mb-1.5"
               >
-                Uživatelské jméno nebo E-mail
+                E-mail
               </label>
               <div className="relative rounded-xl shadow-sm">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">

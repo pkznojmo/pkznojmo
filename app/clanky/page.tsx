@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -783,7 +784,14 @@ export default function ClankyPage() {
                 </div>
                 {coverImageUrl && (
                   <div className="mt-3 relative w-32 h-32 rounded-xl overflow-hidden border border-slate-200">
-                    <img src={coverImageUrl} alt="Náhled" className="w-full h-full object-cover" />
+                    <Image
+                      src={coverImageUrl}
+                      alt="Náhled"
+                      fill
+                      sizes="128px"
+                      className="object-cover"
+                      unoptimized={coverImageUrl.startsWith('blob:') || coverImageUrl.startsWith('data:')}
+                    />
                   </div>
                 )}
               </div>
@@ -868,12 +876,19 @@ export default function ClankyPage() {
                 {galleryUrls.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {galleryUrls.map((url, index) => (
-                      <div key={index} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-50">
-                        <img src={url} alt={`Galerie ${index + 1}`} className="w-full h-full object-cover" />
+                      <div key={url} className="relative group rounded-xl overflow-hidden border border-slate-200 aspect-square bg-slate-50">
+                        <Image
+                          src={url}
+                          alt={`Galerie ${index + 1}`}
+                          fill
+                          sizes="(max-width: 640px) 50vw, 25vw"
+                          className="object-cover"
+                          unoptimized={url.startsWith('blob:') || url.startsWith('data:')}
+                        />
                         <button
                           type="button"
                           onClick={() => removeGalleryImage(index)}
-                          className="absolute top-2 right-2 p-1.5 rounded-full bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-red-600 text-white opacity-0 group-hover:opacity-100 transition-opacity"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>

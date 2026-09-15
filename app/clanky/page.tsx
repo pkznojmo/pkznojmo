@@ -45,7 +45,8 @@ async function compressImage(file: File, maxWidth = 1200, quality = 0.8): Promis
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = (event) => {
-      const img = new Image();
+      // Použití window.Image() místo new Image() vyřeší typovou chybu při buildování
+      const img = new window.Image();
       img.src = event.target?.result as string;
       img.onload = () => {
         const canvas = document.createElement('canvas');

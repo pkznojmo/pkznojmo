@@ -201,7 +201,7 @@ function CellInput({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="px-3 py-1.5 text-center bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 hover:border-blue-400 transition-all flex items-center justify-center gap-1 min-w-[64px]"
+        className="px-2 sm:px-3 py-1.5 text-center bg-white border border-slate-200 rounded-xl text-[11px] sm:text-xs font-bold text-slate-800 hover:border-blue-400 transition-all flex items-center justify-center gap-1 min-w-[58px] sm:min-w-[64px]"
       >
         <span>{value}</span>
         <span className="text-[10px] text-slate-400 font-normal">{unit}</span>
@@ -373,9 +373,23 @@ export default function AttendanceClient({
         .select('id, first_name, last_name, team_id')
         .eq('team_id', numericTeamId);
 
-      const fetchedSwimmers: Swimmer[] = (swData || []).sort((a, b) => 
-        (a.last_name || '').localeCompare(b.last_name || '')
-      );
+      const fetchedSwimmers: Swimmer[] = (swData || []).sort((a, b) => {
+        const lastNameCompare = (a.last_name || '').localeCompare(
+          b.last_name || '',
+          'cs-CZ',
+          { sensitivity: 'base' }
+        );
+
+        if (lastNameCompare !== 0) {
+          return lastNameCompare;
+        }
+
+        return (a.first_name || '').localeCompare(
+          b.first_name || '',
+          'cs-CZ',
+          { sensitivity: 'base' }
+        );
+      });
       setSwimmers(fetchedSwimmers);
 
       const { data: allData } = await supabase
@@ -532,7 +546,7 @@ export default function AttendanceClient({
   const dayNamesShort = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
 
   return (
-    <div className="p-3 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-4">
+    <div className="px-1.5 py-3 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-4">
       {/* Hlavička */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
         <div>
@@ -748,9 +762,9 @@ export default function AttendanceClient({
                 return (
                   <div 
                     key={swimmer.id} 
-                    className="bg-white border border-slate-200/80 rounded-xl px-3 sm:px-4 py-2.5 shadow-sm flex items-center justify-between gap-2 hover:border-slate-300 transition-all"
+                    className="bg-white border border-slate-200/80 rounded-xl px-2 sm:px-4 py-2.5 shadow-sm flex items-center justify-between gap-1 sm:gap-2 hover:border-slate-300 transition-all"
                   >
-                    <div className="font-bold text-slate-900 text-xs sm:text-sm min-w-0 flex-1 truncate pr-2">
+                    <div className="font-bold text-slate-900 text-[11px] sm:text-sm min-w-0 flex-1 truncate pr-1 sm:pr-2">
                       <Link 
                         href={`/dashboard/plavec/${swimmer.id}`}
                         className="hover:text-blue-600 transition-colors"
@@ -759,9 +773,9 @@ export default function AttendanceClient({
                       </Link>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-xl border border-slate-200/80">
-                        <ActiveIcon className={`w-3.5 h-3.5 ${tabConfig[activeTab].color} shrink-0`} />
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                      <div className="flex items-center gap-1 sm:gap-1.5 bg-slate-50 px-1.5 sm:px-2 py-1.5 rounded-xl border border-slate-200/80">
+                        <ActiveIcon className={`hidden sm:block w-3.5 h-3.5 ${tabConfig[activeTab].color} shrink-0`} />
                         
                         <CellInput
                           swimmerId={swimmer.id}
@@ -775,7 +789,7 @@ export default function AttendanceClient({
                         <button
                           type="button"
                           onClick={() => applyQuickValueToField(swimmer.id, activeTab, quickValues[activeTab])}
-                          className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
+                          className="px-1.5 sm:px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all"
                           title={`Vložit šablonu (${quickValues[activeTab]} ${tabConfig[activeTab].unit})`}
                         >
                           <ArrowDownToLine className="w-3.5 h-3.5" />

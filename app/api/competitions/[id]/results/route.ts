@@ -105,7 +105,7 @@ async function fetchAndCacheResults(competitionId: number) {
 
         resultsMap[catId].singleOutputs = rawOutputs;
 
-        // Agregace výsledků pro plavce klubu PKZn a TJZn
+        // Agregace výsledků pro plavce klubu PKZn
         for (const item of rawOutputs) {
           const clubAbbrev = item.clubAbbrev || item.club || '';
           const isPkzn = ['PKZN'].includes(clubAbbrev.trim().toUpperCase());

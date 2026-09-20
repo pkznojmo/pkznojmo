@@ -267,9 +267,9 @@ export default function ZavodDetailPage() {
     const abbrev = (clubAbbrev || '').trim().toUpperCase();
     const fullName = (club || '').trim().toUpperCase();
     
-    return ['PKZN', 'PKZNO', 'TJZN'].includes(abbrev) || 
+    return ['PKZN'].includes(abbrev) || 
            fullName.includes('PLAVECKÝ KLUB ZNOJMO') || 
-           fullName.includes('TJ ZNOJMO');
+           fullName.includes('PKZn');
   };
 
   const formatSwimmingTime = (timeInput: any) => {

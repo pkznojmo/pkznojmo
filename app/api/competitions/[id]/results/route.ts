@@ -108,7 +108,7 @@ async function fetchAndCacheResults(competitionId: number) {
         // Agregace výsledků pro plavce klubu PKZn a TJZn
         for (const item of rawOutputs) {
           const clubAbbrev = item.clubAbbrev || item.club || '';
-          const isPkzn = ['PKZN', 'PKZNO', 'TJZN'].includes(clubAbbrev.trim().toUpperCase());
+          const isPkzn = ['PKZN'].includes(clubAbbrev.trim().toUpperCase());
 
           if (isPkzn) {
             const swimmerId = item.userId || item.personId || item.swimmerId || item.competitorId;

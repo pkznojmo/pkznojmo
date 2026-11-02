@@ -1,8 +1,13 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export async function POST(req: Request) {
   try {
+    const authClient = await createSupabaseServerClient();
+    const { data: { user } } = await authClient.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Je nutné se přihlásit.' }, { status: 401 });
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -20,7 +25,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { 
       action, 
-      currentUserId, 
       email, 
       password, 
       firstName, 
@@ -31,14 +35,26 @@ export async function POST(req: Request) {
       csps_id
     } = body;
 
-    if (!currentUserId) {
-      return NextResponse.json({ error: 'Neautorizovaný požadavek' }, { status: 401 });
-    }
+    // Never trust a caller supplied ID. The verified Supabase session is authoritative.
+    const verifiedUserId = user.id;
+    const { data: callerProfile } = await supabaseAdmin
+      .from('profiles').select('roles').eq('id', verifiedUserId).maybeSingle();
+    const callerRoles: string[] = callerProfile?.roles || [];
+    const isParent = callerRoles.includes('parent');
+    const isSwimmer = callerRoles.includes('swimmer');
+    const hasParentLink = async (swimmerId: string) => {
+      const { data } = await supabaseAdmin.from('parent_swimmers').select('id')
+        .eq('parent_id', verifiedUserId).eq('swimmer_id', swimmerId).maybeSingle();
+      return !!data;
+    };
 
     // =========================================================
     // A) RODIČ ZŘIZUJE / NASTAVUJE E-MAIL A HESLO PRO DÍTĚ
     // =========================================================
     if (action === 'create_swimmer_credentials') {
+      if (!targetSwimmerId || !isParent || !(await hasParentLink(targetSwimmerId))) {
+        return NextResponse.json({ error: 'Nemáte oprávnění spravovat tohoto plavce.' }, { status: 403 });
+      }
       if (!targetSwimmerId || !email || !password) {
         return NextResponse.json({ error: 'Chybí povinné údaje (dítě, e-mail nebo heslo).' }, { status: 400 });
       }
@@ -67,74 +83,38 @@ export async function POST(req: Request) {
     }
 
     // =========================================================
-    // B) VYTVOŘENÍ NOVÉHO RODIČE (Iniciováno plavcem)
+    // B) POZVÁNÍ NOVÉHO RODIČE (e-mail ověřuje vlastník účtu)
     // =========================================================
     if (action === 'create_parent') {
-      if (!email || !password) {
-        return NextResponse.json({ error: 'Zadejte e-mail a heslo rodiče' }, { status: 400 });
+      if (!isSwimmer) return NextResponse.json({ error: 'Tuto akci může provést pouze plavec.' }, { status: 403 });
+      if (!email || !firstName?.trim() || !lastName?.trim()) {
+        return NextResponse.json({ error: 'Zadejte platný e-mail a jméno rodiče.' }, { status: 400 });
       }
 
       const cleanEmail = email.trim().toLowerCase();
-
-      // 1. Zajištění existence profilu pro plavce BEZ přepisování existujícího jména
-      const { data: existingSwimmerProfile } = await supabaseAdmin
-        .from('profiles')
-        .select('id')
-        .eq('id', currentUserId)
-        .maybeSingle();
-
-      if (!existingSwimmerProfile) {
-        const { data: swimmerAuth } = await supabaseAdmin.auth.admin.getUserById(currentUserId);
-        const swimmerMeta = swimmerAuth?.user?.user_metadata || {};
-
-        const swimmerFirstName = swimmerMeta.first_name || swimmerMeta.full_name?.split(' ')[0] || '';
-        const swimmerLastName = swimmerMeta.last_name || swimmerMeta.full_name?.split(' ').slice(1).join(' ') || '';
-
-        await supabaseAdmin.from('profiles').insert([{ 
-          id: currentUserId,
-          first_name: swimmerFirstName,
-          last_name: swimmerLastName
-        }]);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return NextResponse.json({ error: 'Zadejte platnou e-mailovou adresu.' }, { status: 400 });
       }
 
-      // 2. Příprava jména pro nového rodiče
-      const pFirstName = firstName?.trim() || 'Rodič';
-      const pLastName = lastName?.trim() || cleanEmail.split('@')[0];
-      const pFullName = `${pFirstName} ${pLastName}`.trim();
+      const { data: existingLinks } = await supabaseAdmin
+        .from('parent_swimmers').select('id').eq('swimmer_id', verifiedUserId).limit(2);
+      if ((existingLinks || []).length >= 2) {
+        return NextResponse.json({ error: 'K účtu lze připojit nejvýše dva rodiče.' }, { status: 429 });
+      }
 
-      // 3. Vytvoření / získání Auth účtu rodiče (VÝHRADNĚ S ROLÍ PARENT)
-      let parentId: string;
+      const pFirstName = firstName.trim();
+      const pLastName = lastName.trim();
+      const pFullName = `${pFirstName} ${pLastName}`;
 
-      const { data: parentAuth, error: parentAuthErr } = await supabaseAdmin.auth.admin.createUser({
-        email: cleanEmail,
-        password,
-        email_confirm: true,
-        user_metadata: { 
-          is_parent: true,
-          roles: ['parent'], // Natvrdo pouze parent
-          first_name: pFirstName,
-          last_name: pLastName,
-          full_name: pFullName
-        }
+      const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(cleanEmail, {
+        data: { is_parent: true, first_name: pFirstName, last_name: pLastName, full_name: pFullName },
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
       });
-
-      if (parentAuthErr) {
-        if (parentAuthErr.message.includes('already been registered') || parentAuthErr.status === 422) {
-          const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
-          const existingUser = usersData.users.find(u => u.email?.toLowerCase() === cleanEmail);
-          
-          if (!existingUser) {
-            return NextResponse.json({ error: 'Uživatel s tímto e-mailem již existuje, ale nelze načíst jeho ID.' }, { status: 400 });
-          }
-          parentId = existingUser.id;
-        } else {
-          throw parentAuthErr;
-        }
-      } else {
-        parentId = parentAuth.user.id;
+      if (inviteError || !invited.user) {
+        return NextResponse.json({ success: true, message: 'Pokud lze pro tuto adresu založit účet, dorazí pozvánka. Je-li účet již založen, zvolte propojení s existujícím účtem.' });
       }
 
-      // 4. Nastavení výhradní role ['parent'] v tabulce profiles
+      const parentId = invited.user.id;
       const { error: profileDbErr } = await supabaseAdmin
         .from('profiles')
         .upsert([{ 
@@ -142,19 +122,14 @@ export async function POST(req: Request) {
           first_name: pFirstName,
           last_name: pLastName,
           email: cleanEmail,
-          roles: ['parent'] // Vytváříme nového rodiče -> zaručíme pouze 'parent' bez 'swimmer'
+          roles: ['parent']
         }], { onConflict: 'id' });
 
       if (profileDbErr) throw profileDbErr;
 
-      await supabaseAdmin
-        .from('parents')
-        .upsert([{ id: parentId, email: cleanEmail }], { onConflict: 'id' });
-        
-      // 5. Propojení v parent_swimmers
       const { error: linkErr } = await supabaseAdmin
         .from('parent_swimmers')
-        .upsert([{ parent_id: parentId, swimmer_id: currentUserId }], { onConflict: 'parent_id,swimmer_id' });
+        .upsert([{ parent_id: parentId, swimmer_id: verifiedUserId }], { onConflict: 'parent_id,swimmer_id' });
 
       if (linkErr) {
         if (linkErr.code === '23505') {
@@ -163,13 +138,14 @@ export async function POST(req: Request) {
         throw linkErr;
       }
 
-      return NextResponse.json({ success: true, message: 'Rodičovský účet byl vytvořen a propojen.' });
+      return NextResponse.json({ success: true, message: 'Pozvánka byla odeslána. Rodič si účet aktivuje a nastaví heslo přes e-mail.' });
     }
 
     // =========================================================
     // C) PROPOJENÍ S EXISTUJÍCÍM RODIČEM (+ OVĚŘENÍ HESLA A Nastavení Role)
     // =========================================================
     if (action === 'link_existing_parent') {
+      if (!isSwimmer) return NextResponse.json({ error: 'Tuto akci může provést pouze plavec.' }, { status: 403 });
       const parentEmailToUse = (targetParentEmail || email)?.trim().toLowerCase();
       
       if (!parentEmailToUse) {
@@ -196,7 +172,7 @@ export async function POST(req: Request) {
       }
 
       const parentUserId = authData.user.id;
-      const targetSwimmer = targetSwimmerId || currentUserId;
+      const targetSwimmer = verifiedUserId;
 
       // Zajištění, že rodič má v profilu roli 'parent'
       const { data: existingParentProf } = await supabaseAdmin
@@ -233,6 +209,9 @@ export async function POST(req: Request) {
     // D) ODEBRÁNÍ DÍTĚTE RODIČEM (Ochrana: Dítě musí mít e-mail)
     // =========================================================
     if (action === 'remove_child') {
+      if (!targetSwimmerId || !isParent || !(await hasParentLink(targetSwimmerId))) {
+        return NextResponse.json({ error: 'Nemáte oprávnění odebrat tohoto plavce.' }, { status: 403 });
+      }
       if (!targetSwimmerId) {
         return NextResponse.json({ error: 'Chybí ID dítěte k odebrání.' }, { status: 400 });
       }
@@ -263,7 +242,7 @@ export async function POST(req: Request) {
       const { error: deleteErr } = await supabaseAdmin
         .from('parent_swimmers')
         .delete()
-        .eq('parent_id', currentUserId)
+        .eq('parent_id', verifiedUserId)
         .eq('swimmer_id', targetSwimmerId);
 
       if (deleteErr) throw deleteErr;
@@ -278,7 +257,10 @@ export async function POST(req: Request) {
     // E) PLAVEC SI SÁM NASTAVUJE/MĚNÍ SŮJ E-MAIL A HESLO
     // =========================================================
     if (action === 'update_swimmer_self_credentials') {
-      const targetId = targetSwimmerId || currentUserId;
+      const targetId = verifiedUserId;
+      if (targetSwimmerId && targetSwimmerId !== verifiedUserId) {
+        return NextResponse.json({ error: 'Můžete měnit pouze vlastní přihlašovací údaje.' }, { status: 403 });
+      }
 
       if (!targetId || !email) {
         return NextResponse.json({ error: 'Chybí povinné údaje (e-mail).' }, { status: 400 });
@@ -319,18 +301,19 @@ export async function POST(req: Request) {
     // F) ÚPRAVA ČSPS_ID (PLAVEC PRO SEBE / RODIČ PRO SVÉ DÍTĚ)
     // =========================================================
     if (action === 'update_csps_id') {
-      const targetId = targetSwimmerId || currentUserId;
+      const targetId = targetSwimmerId || verifiedUserId;
       const rawCsps = cspsId !== undefined ? cspsId : csps_id;
       const cleanCspsId = rawCsps !== undefined && rawCsps !== null && rawCsps !== '' 
         ? rawCsps.toString().trim() 
         : null;
 
       // Ochrana oprávnění: buď upravuje sám sebe, nebo je prokazatelným rodičem plavce
-      if (targetId !== currentUserId) {
+      if (targetId !== verifiedUserId) {
+        if (!isParent) return NextResponse.json({ error: 'Nemáte oprávnění.' }, { status: 403 });
         const { data: isParentLink } = await supabaseAdmin
           .from('parent_swimmers')
           .select('id')
-          .eq('parent_id', currentUserId)
+          .eq('parent_id', verifiedUserId)
           .eq('swimmer_id', targetId)
           .maybeSingle();
 

@@ -1,28 +1,31 @@
-import { supabase } from '@/lib/supabase';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import AttendanceClient from './AttendanceClient';
+import { redirect } from 'next/navigation';
 
 export default async function TeamAttendancePage({ 
   params 
 }: { 
   params: Promise<{ id: string }> | { id: string } 
 }) {
+  const supabase = await createSupabaseServerClient();
   const resolvedParams = await params;
   const teamId = resolvedParams.id;
 
   // 1. Zjištění přihlášeného uživatele a jeho role
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/prihlaseni');
   let isAdmin = false;
 
-  if (user) {
+  {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, roles')
+      .select('roles')
       .eq('id', user.id)
       .single();
     
-    if (profile?.role === 'admin' || (profile as any)?.roles?.includes('admin')) {
-      isAdmin = true;
-    }
+    const roles: string[] = profile?.roles || [];
+    if (!roles.includes('admin') && !roles.includes('trainer')) redirect('/dashboard');
+    isAdmin = roles.includes('admin');
   }
 
   // 2. Načtení plavců přímo z tabulky profiles podle team_id

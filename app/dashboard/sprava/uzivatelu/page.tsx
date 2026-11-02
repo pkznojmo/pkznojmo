@@ -198,7 +198,8 @@ export default function SpravaUzivateluPage() {
     if (modalMode === 'create') {
       const generatedUsername = calculatedUsername;
       const generatedEmail = calculatedEmail;
-      const defaultPassword = 'Plaveme2026!';
+      const passwordBytes = crypto.getRandomValues(new Uint8Array(24));
+      const defaultPassword = Array.from(passwordBytes, (value) => value.toString(16).padStart(2, '0')).join('');
 
       if (!generatedUsername) {
         alert('Vyplňte jméno, příjmení a ročník narození pro vygenerování přihlašovacích údajů.');

@@ -90,7 +90,6 @@ export default function ProfilePage() {
   // Stav verifikace e-mailu rodiče
   const [emailChecked, setEmailChecked] = useState(false);
   const [accountExists, setAccountExists] = useState<boolean | null>(null);
-  const [checkingEmail, setCheckingEmail] = useState(false);
 
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -270,37 +269,19 @@ export default function ProfilePage() {
     }
   };
 
-  // KROK 1: Kontrola existence e-mailu na backendu (pro rodiče)
+  // Choose the linking flow without exposing whether an email is registered.
   const handleCheckEmail = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email) return;
+    if (!email || accountExists === null) return;
 
     if (user?.email && email.toLowerCase() === user.email.toLowerCase()) {
       setFormError('Nemůžete zadat svůj vlastní e-mail. Nemůžete být sám sobě rodičem / dítětem.');
       return;
     }
 
-    setCheckingEmail(true);
     setFormError(null);
     setFormSuccess(null);
-
-    try {
-      const res = await fetch('/api/family/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Nepodařilo se ověřit e-mail.');
-
-      setAccountExists(data.exists);
-      setEmailChecked(true);
-    } catch (err: any) {
-      setFormError(err.message || 'Chyba při kontrole e-mailu.');
-    } finally {
-      setCheckingEmail(false);
-    }
+    setEmailChecked(true);
   };
 
   const resetEmailCheck = () => {
@@ -754,6 +735,7 @@ export default function ProfilePage() {
                       className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
                   </div>
+
                 </div>
 
                 <hr className="border-slate-100" />
@@ -890,19 +872,26 @@ export default function ProfilePage() {
                     />
                   </div>
 
+                  <fieldset className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <legend className="text-xs font-bold text-amber-900 mb-1">Jaký účet má rodič?</legend>
+                    <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white p-3 cursor-pointer">
+                      <input type="radio" name="parent-account" checked={accountExists === true}
+                        onChange={() => setAccountExists(true)} />
+                      Rodič už účet má
+                    </label>
+                    <label className="flex items-center gap-2 rounded-xl border border-amber-200 bg-white p-3 cursor-pointer">
+                      <input type="radio" name="parent-account" checked={accountExists === false}
+                        onChange={() => setAccountExists(false)} />
+                      Rodič účet ještě nemá
+                    </label>
+                  </fieldset>
+
                   <button
                     type="submit"
-                    disabled={checkingEmail || !email}
+                    disabled={!email || accountExists === null}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold px-6 py-2.5 rounded-xl text-sm transition-all shadow-md shadow-amber-600/20 disabled:opacity-70"
                   >
-                    {checkingEmail ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <span>Ověřit e-mail</span>
-                        <ArrowRight className="h-4 w-4" />
-                      </>
-                    )}
+                    <><span>Pokračovat</span><ArrowRight className="h-4 w-4" /></>
                   </button>
                 </form>
               ) : (
@@ -925,7 +914,7 @@ export default function ProfilePage() {
                   {accountExists ? (
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-xs font-medium space-y-1">
                       <p className="font-bold flex items-center gap-1.5 text-blue-900">
-                        <UserCheck className="h-4 w-4 text-blue-600" /> Nalezen existující rodičovský účet!
+                        <UserCheck className="h-4 w-4 text-blue-600" /> Propojení s existujícím účtem
                       </p>
                       <p className="text-blue-700">Pro bezpečnost zadejte heslo k tomuto rodičovskému účtu pro potvrzení propojení.</p>
                     </div>
@@ -934,7 +923,7 @@ export default function ProfilePage() {
                       <p className="font-bold flex items-center gap-1.5 text-emerald-900">
                         <UserPlus className="h-4 w-4 text-emerald-600" /> Nový rodičovský účet
                       </p>
-                      <p className="text-emerald-700">Tento e-mail zatím nemá účet. Zadáním údajů níže vytvoříte nový účet rodiče.</p>
+                      <p className="text-emerald-700">Na tento e-mail odešleme pozvánku. Rodič účet aktivuje a heslo si nastaví sám.</p>
                     </div>
                   )}
 
@@ -976,9 +965,9 @@ export default function ProfilePage() {
                     </div>
                   )}
 
-                  <div>
+                  {accountExists && <div>
                     <label className="block text-xs font-bold text-amber-900 uppercase tracking-wider mb-1">
-                      {accountExists ? "Heslo k rodičovskému účtu" : "Zvolte heslo pro rodiče"}
+                      Heslo k rodičovskému účtu
                     </label>
                     <div className="relative">
                       <KeyRound className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-amber-500" />
@@ -987,11 +976,11 @@ export default function ProfilePage() {
                         required
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder={accountExists ? "Heslo k rodičovskému účtu" : "Zvolte nové heslo (min. 6 znaků)"}
+                        placeholder="Heslo k rodičovskému účtu"
                         className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-amber-300 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-amber-500"
                       />
                     </div>
-                  </div>
+                  </div>}
 
                   <button
                     type="submit"
@@ -1001,7 +990,7 @@ export default function ProfilePage() {
                     {formLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <span>{accountExists ? 'Propojit s účtem rodiče' : 'Vytvořit a propojit rodiče'}</span>
+                      <span>{accountExists ? 'Propojit s účtem rodiče' : 'Odeslat pozvánku rodiči'}</span>
                     )}
                   </button>
                 </form>

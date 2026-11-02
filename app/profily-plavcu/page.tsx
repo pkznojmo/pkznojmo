@@ -16,7 +16,6 @@ interface Profile {
   first_name: string;
   last_name: string;
   birth_year: number | null;
-  username: string | null;
   csps_id: number | null;
 }
 
@@ -227,7 +226,7 @@ export default function SwimmerProfilesPage() {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name, birth_year, username, csps_id')
+          .select('id, first_name, last_name, birth_year, csps_id')
           .eq('team_id', selectedTeamId)
           .eq('active', true)
           .order('last_name', { ascending: true });
